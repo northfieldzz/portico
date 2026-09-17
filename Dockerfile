@@ -20,7 +20,7 @@ RUN uv build --wheel --out-dir /dist
 FROM python:3.13-slim AS runner
 
 LABEL maintainer="IT Context Platform"
-LABEL service="mcp-gateway"
+LABEL service="portico"
 
 WORKDIR /app
 
@@ -38,4 +38,4 @@ RUN uv pip install --system --no-cache /dist/*.whl \
 
 EXPOSE 8001
 
-CMD ["uvicorn", "mcp_gateway.main:app", "--host", "0.0.0.0", "--port", "8001", "--log-level", "info"]
+CMD ["uvicorn", "portico.main:app", "--host", "0.0.0.0", "--port", "8001", "--log-level", "info"]

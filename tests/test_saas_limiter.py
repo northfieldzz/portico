@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mcp_gateway.services.saas_limiter import SaaSRateLimiter
+from portico.services.saas_limiter import SaaSRateLimiter
 
 
 class TestSaaSRateLimiter:

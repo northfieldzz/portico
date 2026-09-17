@@ -9,7 +9,7 @@ from typing import Any
 
 import asyncpg
 
-from mcp_gateway.core.config import POSTGRES_URL
+from portico.core.config import POSTGRES_URL
 
 logger = logging.getLogger(__name__)
 

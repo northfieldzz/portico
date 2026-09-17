@@ -59,7 +59,7 @@ async def dynamic_list_tools() -> list[mcp.types.Tool]:
     """
     接続中テナントの利用可能な全ツール（ビルトイン + 外部 MCP サーバー）を動的に集約して返却する。
     """
-    from mcp_gateway.services.server_service import (
+    from portico.services.server_service import (
         check_scope_authorized,
         get_aggregated_tools,
     )
@@ -106,7 +106,7 @@ async def dynamic_call_tool(name: str, arguments: dict) -> list[mcp.types.TextCo
     ローカルディスパッチまたは外部 MCP サーバーへの認証ヘッダー付きプロキシ転送を行う。
     """
     from fastapi import HTTPException
-    from mcp_gateway.services.server_service import dispatch_tool_call
+    from portico.services.server_service import dispatch_tool_call
 
     tenant_id, scopes = get_current_mcp_context()
     try:

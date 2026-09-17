@@ -15,10 +15,10 @@ import httpx
 from fastapi import HTTPException, status as http_status
 
 
-from mcp_gateway.core.config import MAX_SERVERS_PER_TENANT
-from mcp_gateway.db.session import get_db_pool, get_memory_external_servers
-from mcp_gateway.schemas.server import ServerCreateRequest
-from mcp_gateway.services.crypto import (
+from portico.core.config import MAX_SERVERS_PER_TENANT
+from portico.db.session import get_db_pool, get_memory_external_servers
+from portico.schemas.server import ServerCreateRequest
+from portico.services.crypto import (
     build_auth_headers,
     decrypt_auth_config,
     encrypt_auth_config,

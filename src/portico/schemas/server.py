@@ -9,8 +9,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from mcp_gateway.core.config import ALLOW_LOCAL_MCP_SERVERS
-from mcp_gateway.services.url_validator import SSRFValidationError, validate_mcp_url
+from portico.core.config import ALLOW_LOCAL_MCP_SERVERS
+from portico.services.url_validator import SSRFValidationError, validate_mcp_url
 
 
 class AuthType(StrEnum):

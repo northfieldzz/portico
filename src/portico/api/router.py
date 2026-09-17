@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from mcp_gateway.api.routes import internal, ops, servers, tools
+from portico.api.routes import internal, ops, servers, tools
 
 gateway_router = APIRouter()
 

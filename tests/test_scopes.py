@@ -1,5 +1,5 @@
 """
-Unit tests for OAuth Scopes authorization and X-Scopes header enforcement in mcp_gateway.
+Unit tests for OAuth Scopes authorization and X-Scopes header enforcement in portico.
 """
 
 from __future__ import annotations
@@ -9,8 +9,8 @@ from unittest.mock import patch
 import httpx
 from fastapi.testclient import TestClient
 
-from mcp_gateway.api.routes.tools import check_scope_authorized
-from mcp_gateway.db.session import get_memory_external_servers
+from portico.api.routes.tools import check_scope_authorized
+from portico.db.session import get_memory_external_servers
 
 
 class TestScopeMatchingLogic:

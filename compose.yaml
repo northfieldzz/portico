@@ -2,7 +2,7 @@ include:
   - path: postgres.compose.yaml
 
 services:
-  mcp_gateway:
+  portico:
     build:
       context: .
       dockerfile: Dockerfile

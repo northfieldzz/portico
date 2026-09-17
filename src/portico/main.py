@@ -10,11 +10,11 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-from mcp_gateway.api.router import gateway_router
-from mcp_gateway.core.config import LOG_LEVEL, ROOT_PATH
-from mcp_gateway.core.fastmcp_hub import gateway_mcp
-from mcp_gateway.db.session import close_db_pool, init_mcp_db
-from mcp_gateway.schemas.error import ErrorResponse, HTTPValidationError
+from portico.api.router import gateway_router
+from portico.core.config import LOG_LEVEL, ROOT_PATH
+from portico.core.fastmcp_hub import gateway_mcp
+from portico.db.session import close_db_pool, init_mcp_db
+from portico.schemas.error import ErrorResponse, HTTPValidationError
 
 load_dotenv()
 

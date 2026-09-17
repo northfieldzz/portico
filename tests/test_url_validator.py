@@ -10,8 +10,8 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from mcp_gateway.schemas.server import ServerCreateRequest
-from mcp_gateway.services.url_validator import SSRFValidationError, validate_mcp_url
+from portico.schemas.server import ServerCreateRequest
+from portico.services.url_validator import SSRFValidationError, validate_mcp_url
 
 
 class TestSSRFValidator:

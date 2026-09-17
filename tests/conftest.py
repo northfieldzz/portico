@@ -1,5 +1,5 @@
 """
-Pytest configuration and shared fixtures for mcp_gateway tests.
+Pytest configuration and shared fixtures for portico tests.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-# Ensure mcp_gateway/src is in sys.path
+# Ensure portico/src is in sys.path
 _src_dir = str(Path(__file__).resolve().parent.parent / "src")
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
@@ -18,8 +18,8 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
-from mcp_gateway.db.session import get_memory_external_servers
-from mcp_gateway.main import app
+from portico.db.session import get_memory_external_servers
+from portico.main import app
 
 
 @pytest.fixture(autouse=True)
@@ -35,8 +35,8 @@ def reset_memory_db():
 def mock_db_pool_none():
     """DB接続プールをモックし、テスト中はインメモリフォールバックモードで動作させる。"""
     with (
-        patch("mcp_gateway.db.session.get_db_pool", new_callable=AsyncMock, return_value=None),
-        patch("mcp_gateway.services.server_service.get_db_pool", new_callable=AsyncMock, return_value=None),
+        patch("portico.db.session.get_db_pool", new_callable=AsyncMock, return_value=None),
+        patch("portico.services.server_service.get_db_pool", new_callable=AsyncMock, return_value=None),
     ):
         yield
 

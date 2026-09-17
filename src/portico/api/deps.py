@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from fastapi import Header, HTTPException, Query, status
 
-from mcp_gateway.core.config import INTERNAL_SERVICE_SECRET
+from portico.core.config import INTERNAL_SERVICE_SECRET
 
 
 def get_tenant_id(

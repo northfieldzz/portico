@@ -1,13 +1,13 @@
 """
-Unit tests for crypto and authentication utilities in mcp_gateway.
+Unit tests for crypto and authentication utilities in portico.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from mcp_gateway.schemas.server import AuthType
-from mcp_gateway.services.crypto import (
+from portico.schemas.server import AuthType
+from portico.services.crypto import (
     build_auth_headers,
     decrypt_auth_config,
     decrypt_secret,

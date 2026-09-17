@@ -10,9 +10,9 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from mcp_gateway.api.deps import get_scopes, get_tenant_id
-from mcp_gateway.schemas.tools import ToolDefinition, ToolExecutionResponse
-from mcp_gateway.services.server_service import (
+from portico.api.deps import get_scopes, get_tenant_id
+from portico.schemas.tools import ToolDefinition, ToolExecutionResponse
+from portico.services.server_service import (
     check_scope_authorized,
     dispatch_tool_call,
     get_aggregated_tools,

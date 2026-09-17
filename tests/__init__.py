@@ -1,3 +1,3 @@
 """
-Unit tests for mcp_gateway.
+Unit tests for portico.
 """

@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, patch
 import httpx
 from fastapi.testclient import TestClient
 
-from mcp_gateway.core.config import INTERNAL_SERVICE_SECRET
-from mcp_gateway.db.session import get_memory_external_servers
+from portico.core.config import INTERNAL_SERVICE_SECRET
+from portico.db.session import get_memory_external_servers
 
 
 class TestDependencyInjection:
@@ -171,7 +171,7 @@ class TestToolRoutes:
     def test_execute_external_tool_with_auth(self, client: TestClient):
         """外部 MCP サーバーへのツール実行プロキシ時に認証ヘッダーが付与される。"""
         mem = get_memory_external_servers()
-        from mcp_gateway.services.crypto import encrypt_auth_config
+        from portico.services.crypto import encrypt_auth_config
 
         enc = encrypt_auth_config(
             {

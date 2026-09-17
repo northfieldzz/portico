@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from mcp_gateway.api.deps import require_internal_secret
-from mcp_gateway.schemas.server import TenantCleanupResponse
-from mcp_gateway.services.server_service import delete_all_servers_for_tenant
+from portico.api.deps import require_internal_secret
+from portico.schemas.server import TenantCleanupResponse
+from portico.services.server_service import delete_all_servers_for_tenant
 
 router = APIRouter(
     prefix="",

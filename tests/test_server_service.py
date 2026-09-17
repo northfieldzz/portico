@@ -10,9 +10,9 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from mcp_gateway.db.session import get_memory_external_servers
-from mcp_gateway.schemas.server import AuthType, ServerCreateRequest
-from mcp_gateway.services.server_service import (
+from portico.db.session import get_memory_external_servers
+from portico.schemas.server import AuthType, ServerCreateRequest
+from portico.services.server_service import (
     add_external_server,
     delete_all_servers_for_tenant,
     get_aggregated_tools,
@@ -86,7 +86,7 @@ class TestServerService:
     async def test_add_external_server_infrastructure_limit(self):
         """物理リミット (MAX_SERVERS_PER_TENANT) 到達時に 429 エラーを送出する。"""
         with (
-            patch("mcp_gateway.services.server_service.MAX_SERVERS_PER_TENANT", 2),
+            patch("portico.services.server_service.MAX_SERVERS_PER_TENANT", 2),
             patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.216.34", 443))]),
         ):
             mem = get_memory_external_servers()

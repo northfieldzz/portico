@@ -4,7 +4,7 @@ Tests for dynamic multi-tenant MCP SSE protocol handlers.
 
 import pytest
 import mcp.types
-from mcp_gateway.core.fastmcp_hub import dynamic_list_tools, dynamic_call_tool
+from portico.core.fastmcp_hub import dynamic_list_tools, dynamic_call_tool
 
 
 @pytest.mark.asyncio

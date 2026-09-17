@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from mcp_gateway.api.deps import get_tenant_id
-from mcp_gateway.schemas.server import ServerCreateRequest, ServerDeleteResponse, ServerResponse
-from mcp_gateway.services.server_service import (
+from portico.api.deps import get_tenant_id
+from portico.schemas.server import ServerCreateRequest, ServerDeleteResponse, ServerResponse
+from portico.services.server_service import (
     add_external_server,
     list_servers_for_tenant,
     remove_external_server,

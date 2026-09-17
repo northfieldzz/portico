@@ -1,6 +1,6 @@
-# MCP Gateway — コンポーネント内部仕様書インデックス
+# Portico — コンポーネント内部仕様書インデックス
 
-本ディレクトリ（`apps/mcp_gateway/docs/`）には、MCP Gateway サービス固有の**内部アーキテクチャ、FastMCP ハブ設計、PostgreSQL `mcp` スキーマ仕様、標準 SaaS アダプター実装、および外部カスタム MCP サーバー連携**をまとめています。
+本ディレクトリ（`docs/`）には、Portico (MCP Gateway) 固有の**内部アーキテクチャ、FastMCP ハブ設計、PostgreSQL `mcp` スキーマ仕様、標準 SaaS アダプター実装、および外部カスタム MCP サーバー連携**をまとめています。
 
 ※ 全社横断的な認証・認可規約、全体アーキテクチャ、マルチテナント運用方針については、ルートの [docs/](../../docs/README.md) を参照してください。
 

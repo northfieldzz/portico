@@ -1,7 +1,7 @@
 [project]
-name = "mcp-gateway"
+name = "portico"
 version = "0.1.0"
-description = "IT Context Platform — MCP Gateway"
+description = "Portico — MCP Gateway Integration Hub"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.111.0,<1.0",

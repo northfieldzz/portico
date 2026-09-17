@@ -1,6 +1,6 @@
-# MCP Gateway — アーキテクチャ & FastMCP ハブ仕様書
+# Portico — アーキテクチャ & FastMCP ハブ仕様書
 
-本ドキュメントは、`apps/mcp_gateway` におけるサービス構造、FastAPI と FastMCP の統合設計、提供エンドポイント、および起動ライフサイクルについて定義する。
+本ドキュメントは、Portico におけるサービス構造、FastAPI と FastMCP の統合設計、提供エンドポイント、および起動ライフサイクルについて定義する。
 
 ---
 
