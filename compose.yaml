@@ -1,0 +1,24 @@
+include:
+  - path: postgres.compose.yaml
+
+services:
+  mcp_gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      ROOT_PATH: ${ROOT_PATH:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MOCK_EXTERNAL_APIS: ${MOCK_EXTERNAL_APIS:-true}
+      POSTGRES_URL: ${POSTGRES_URL:-postgresql://postgres:password@postgres:5432/itcp_db}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q --spider http://localhost:8001/api/mcp/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
