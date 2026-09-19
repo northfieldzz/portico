@@ -14,19 +14,16 @@ from portico.api.routes import internal, ops, servers, tools
 
 gateway_router = APIRouter()
 
-# ヘルスチェック (/api/mcp/health)
-health_router = APIRouter(prefix="/api/mcp")
-health_router.include_router(ops.router)
-gateway_router.include_router(health_router)
+# システム系ルート (/health, /health/live, /health/ready, /livez, /readyz, /metrics)
+gateway_router.include_router(ops.router)
 
-
-# 内部専用非公開ルート (/api/v1/mcp/internal/*)
-internal_router = APIRouter(prefix="/api/v1/mcp/internal")
+# 内部専用非公開ルート (/v1/internal/*)
+internal_router = APIRouter(prefix="/v1/internal")
 internal_router.include_router(internal.router)
 gateway_router.include_router(internal_router)
 
-# 外部サービス提供用 v1 API ルート (/api/v1/mcp/*)
-v1_router = APIRouter(prefix="/api/v1/mcp")
+# 外部サービス提供用 v1 API ルート (/v1/*)
+v1_router = APIRouter(prefix="/v1")
 v1_router.include_router(servers.router)
 v1_router.include_router(tools.router)
 gateway_router.include_router(v1_router)

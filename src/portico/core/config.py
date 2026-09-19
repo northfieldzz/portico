@@ -25,3 +25,8 @@ MAX_SERVERS_PER_TENANT = int(os.getenv("MAX_SERVERS_PER_TENANT", "50"))
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", "itcp_internal_service_secret_key_888")
+
+# Tollgate リバースプロキシ連携設定
+ENFORCE_TOLLGATE_AUTH = os.getenv("ENFORCE_TOLLGATE_AUTH", "false").lower() in ("true", "1", "yes")
+DEFAULT_TENANT_ID = os.getenv("DEFAULT_TENANT_ID", "tenant_default")
+
