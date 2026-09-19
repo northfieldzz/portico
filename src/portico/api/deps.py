@@ -4,6 +4,7 @@ MCP Gateway — 依存性注入 (DI) モジュール
 
 from __future__ import annotations
 
+import secrets
 from fastapi import Header, HTTPException, Query, status
 
 from portico.core.config import INTERNAL_SERVICE_SECRET
@@ -22,7 +23,7 @@ def require_internal_secret(
     x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
 ) -> str:
     """内部サービス間専用エンドポイントの共有シークレットを検証する。"""
-    if not x_internal_secret or x_internal_secret != INTERNAL_SERVICE_SECRET:
+    if not x_internal_secret or not secrets.compare_digest(x_internal_secret, INTERNAL_SERVICE_SECRET):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access forbidden: Invalid or missing internal service secret",
