@@ -69,7 +69,7 @@ class TestScopeEnforcementInRoutes:
 
         with patch("httpx.AsyncClient.post", side_effect=mock_post):
             # 1. スコープ未指定 -> 全ツール取得 (名前空間プレフィックス付き)
-            res_all = client.get("/api/v1/mcp/tools", headers={"X-Tenant-ID": "tenant_scopes_test"})
+            res_all = client.get("/v1/tools", headers={"X-Tenant-ID": "tenant_scopes_test"})
             assert res_all.status_code == 200
             names_all = [t["name"] for t in res_all.json()]
             orig_names = [t.get("original_name") for t in res_all.json()]
@@ -79,7 +79,7 @@ class TestScopeEnforcementInRoutes:
 
             # 2. X-Scopes: notion:read -> notion_search のみ取得 (secret_wipe は除外)
             res_notion = client.get(
-                "/api/v1/mcp/tools",
+                "/v1/tools",
                 headers={"X-Tenant-ID": "tenant_scopes_test", "X-Scopes": "notion:read"},
             )
             assert res_notion.status_code == 200
@@ -102,7 +102,7 @@ class TestScopeEnforcementInRoutes:
         with patch("httpx.AsyncClient.post", return_value=mock_post_resp):
             # 不足スコープ (X-Scopes: tools:read) で呼び出し -> 403 Forbidden
             res = client.post(
-                "/api/v1/mcp/tools/infra_destroy",
+                "/v1/tools/infra_destroy",
                 headers={"X-Tenant-ID": "tenant_guard_test", "X-Scopes": "tools:read"},
                 json={"target": "prod-db"},
             )
@@ -132,7 +132,7 @@ class TestScopeEnforcementInRoutes:
         with patch("httpx.AsyncClient.post", side_effect=mock_post):
             # 合致スコープ (X-Scopes: infra:destroy) で呼び出し -> 200 OK
             res = client.post(
-                "/api/v1/mcp/tools/infra_destroy",
+                "/v1/tools/infra_destroy",
                 headers={"X-Tenant-ID": "tenant_guard_test", "X-Scopes": "infra:destroy"},
                 json={"target": "test-sandbox"},
             )

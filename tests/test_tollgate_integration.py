@@ -117,13 +117,13 @@ def test_enforce_tollgate_auth_enabled(mock_context_app, monkeypatch):
 
 
 def test_main_app_tools_endpoint_with_tollgate_headers():
-    """実アプリケーションエンドポイント (/api/v1/mcp/tools) への Tollgate ヘッダー透過動作確認"""
+    """実アプリケーションエンドポイント (/v1/tools) への Tollgate ヘッダー透過動作確認"""
     client = TestClient(app)
     headers = {
         "X-Tenant-ID": "tenant_live_demo",
         "X-Key-ID": "key-uuid-9999",
         "X-Key-Prefix": "tlge-live-demo",
     }
-    res = client.get("/api/v1/mcp/tools", headers=headers)
+    res = client.get("/v1/tools", headers=headers)
     assert res.status_code == 200
     assert isinstance(res.json(), list)

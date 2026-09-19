@@ -55,7 +55,7 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url=None,
     redoc_url=None,
-    openapi_url="/api/v1/mcp/openapi.json",
+    openapi_url="/v1/openapi.json",
     responses=COMMON_RESPONSES,
 )
 
@@ -64,6 +64,6 @@ app = FastAPI(
 app.include_router(gateway_router)
 
 
-# ── Mount FastMCP SSE handler under /api/v1/mcp (SSE at /api/v1/mcp/sse) ──
+# ── Mount FastMCP SSE handler under /v1 (SSE at /v1/sse) ──
 mcp_asgi = gateway_mcp.http_app(transport="sse")
-app.mount("/api/v1/mcp", mcp_asgi)
+app.mount("/v1", mcp_asgi)

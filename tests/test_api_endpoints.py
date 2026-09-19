@@ -21,7 +21,7 @@ class TestDependencyInjection:
         """X-Tenant-ID ヘッダーからテナントIDが抽出される。"""
         mem = get_memory_external_servers()
         mem["srv-h1"] = {"id": "srv-h1", "tenant_id": "tenant_header_123", "name": "H1", "url": "https://h1.example.com", "status": "active"}
-        resp = client.get("/api/v1/mcp/servers", headers={"X-Tenant-ID": "tenant_header_123"})
+        resp = client.get("/v1/servers", headers={"X-Tenant-ID": "tenant_header_123"})
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) >= 1
@@ -31,7 +31,7 @@ class TestDependencyInjection:
         """クエリパラメータ tenant_id からテナントIDが抽出される。"""
         mem = get_memory_external_servers()
         mem["srv-q1"] = {"id": "srv-q1", "tenant_id": "tenant_query_456", "name": "Q1", "url": "https://q1.example.com", "status": "active"}
-        resp = client.get("/api/v1/mcp/servers?tenant_id=tenant_query_456")
+        resp = client.get("/v1/servers?tenant_id=tenant_query_456")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) >= 1
@@ -41,7 +41,7 @@ class TestDependencyInjection:
         """指定がない場合は tenant_default となる。"""
         mem = get_memory_external_servers()
         mem["srv-d1"] = {"id": "srv-d1", "tenant_id": "tenant_default", "name": "D1", "url": "https://d1.example.com", "status": "active"}
-        resp = client.get("/api/v1/mcp/servers")
+        resp = client.get("/v1/servers")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) >= 1
@@ -49,16 +49,16 @@ class TestDependencyInjection:
 
     def test_internal_secret_forbidden_when_missing_or_invalid(self, client: TestClient):
         """内部APIに不正または欠落した X-Internal-Secret を渡すと 403 となる。"""
-        resp_missing = client.delete("/api/v1/mcp/internal/tenants/t1")
+        resp_missing = client.delete("/v1/internal/tenants/t1")
         assert resp_missing.status_code == 403
 
-        resp_invalid = client.delete("/api/v1/mcp/internal/tenants/t1", headers={"X-Internal-Secret": "wrong-secret"})
+        resp_invalid = client.delete("/v1/internal/tenants/t1", headers={"X-Internal-Secret": "wrong-secret"})
         assert resp_invalid.status_code == 403
 
     def test_internal_secret_authorized(self, client: TestClient):
         """正しい X-Internal-Secret で内部APIにアクセスできる。"""
         resp = client.delete(
-            "/api/v1/mcp/internal/tenants/tenant_clean",
+            "/v1/internal/tenants/tenant_clean",
             headers={"X-Internal-Secret": INTERNAL_SERVICE_SECRET},
         )
         assert resp.status_code == 200
@@ -72,14 +72,14 @@ class TestServerRoutes:
 
     def test_list_servers(self, client: TestClient):
         """サーバー一覧の取得。"""
-        resp = client.get("/api/v1/mcp/servers", headers={"X-Tenant-ID": "tenant_srv_test"})
+        resp = client.get("/v1/servers", headers={"X-Tenant-ID": "tenant_srv_test"})
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 
     def test_register_server_ssrf_blocked(self, client: TestClient):
         """SSRF に該当する不正な URL は 422 バリデーションエラーとなる。"""
         resp = client.post(
-            "/api/v1/mcp/servers",
+            "/v1/servers",
             headers={"X-Tenant-ID": "tenant_srv_test"},
             json={"name": "Evil Server", "url": "http://169.254.169.254/latest"},
         )
@@ -91,7 +91,7 @@ class TestServerRoutes:
             mock_dns.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
             with patch("httpx.AsyncClient.post", return_value=AsyncMock(status_code=200)):
                 resp = client.post(
-                    "/api/v1/mcp/servers",
+                    "/v1/servers",
                     headers={"X-Tenant-ID": "tenant_srv_test"},
                     json={"name": "Confluence MCP", "url": "https://confluence.example.com"},
                 )
@@ -104,7 +104,7 @@ class TestServerRoutes:
 
     def test_delete_nonexistent_server_returns_404(self, client: TestClient):
         """存在しない外部サーバーの削除は 404 となる。"""
-        resp = client.delete("/api/v1/mcp/servers/ext-nonexist", headers={"X-Tenant-ID": "tenant_srv_test"})
+        resp = client.delete("/v1/servers/ext-nonexist", headers={"X-Tenant-ID": "tenant_srv_test"})
         assert resp.status_code == 404
 
     def test_delete_external_server_success(self, client: TestClient):
@@ -118,7 +118,7 @@ class TestServerRoutes:
             "status": "active",
         }
 
-        resp = client.delete("/api/v1/mcp/servers/ext-123", headers={"X-Tenant-ID": "tenant_del_route"})
+        resp = client.delete("/v1/servers/ext-123", headers={"X-Tenant-ID": "tenant_del_route"})
         assert resp.status_code == 200
         assert resp.json()["status"] == "success"
         assert resp.json()["id"] == "ext-123"
@@ -131,7 +131,7 @@ class TestServerRoutes:
             with patch("httpx.AsyncClient.post", return_value=AsyncMock(status_code=200)):
                 resp = client.post(
 
-                    "/api/v1/mcp/servers",
+                    "/v1/servers",
                     headers={"X-Tenant-ID": "tenant_api_auth"},
                     json={
                         "name": "Auth API Server",
@@ -152,7 +152,7 @@ class TestToolRoutes:
 
     def test_list_tools_empty_when_no_servers(self, client: TestClient):
         """外部サーバー未登録時のツールマニフェスト一覧は空。"""
-        resp = client.get("/api/v1/mcp/tools", headers={"X-Tenant-ID": "tenant_tool_test"})
+        resp = client.get("/v1/tools", headers={"X-Tenant-ID": "tenant_tool_test"})
         assert resp.status_code == 200
         tools = resp.json()
         assert isinstance(tools, list)
@@ -161,7 +161,7 @@ class TestToolRoutes:
     def test_execute_unknown_tool_returns_404(self, client: TestClient):
         """未登録のツール呼び出しは 404 となる。"""
         resp = client.post(
-            "/api/v1/mcp/tools/completely_nonexistent_tool",
+            "/v1/tools/completely_nonexistent_tool",
             headers={"X-Tenant-ID": "tenant_tool_test"},
             json={"foo": "bar"},
         )
@@ -191,7 +191,7 @@ class TestToolRoutes:
         mock_resp = httpx.Response(200, json={"jsonrpc": "2.0", "result": {"value": 42}})
         with patch("httpx.AsyncClient.post", return_value=mock_resp) as mock_post:
             resp = client.post(
-                "/api/v1/mcp/tools/ext_calc",
+                "/v1/tools/ext_calc",
                 headers={"X-Tenant-ID": "tenant_proxy_auth"},
                 json={"x": 20, "y": 22},
             )
@@ -227,7 +227,7 @@ class TestToolRoutes:
         with patch("httpx.AsyncClient.post", return_value=mock_post_resp) as mock_post:
             # Alpha 側の名前空間で実行
             resp = client.post(
-                "/api/v1/mcp/tools/alpha_service__deploy",
+                "/v1/tools/alpha_service__deploy",
                 headers={"X-Tenant-ID": "tenant_route_test"},
                 json={"env": "staging"},
             )
