@@ -4,18 +4,47 @@ MCP Gateway — 依存性注入 (DI) モジュール
 
 from __future__ import annotations
 
-from fastapi import Header, HTTPException, Query, status
+from fastapi import Depends, Header, HTTPException, Query, status
 
-from portico.core.config import INTERNAL_SERVICE_SECRET
+from portico.core.config import DEFAULT_TENANT_ID, ENFORCE_TOLLGATE_AUTH, INTERNAL_SERVICE_SECRET
+from portico.schemas.context import RequestContext
+
+
+def get_request_context(
+    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
+    x_key_id: str | None = Header(None, alias="X-Key-ID"),
+    x_key_prefix: str | None = Header(None, alias="X-Key-Prefix"),
+    x_service_id: str | None = Header(None, alias="X-Service-ID"),
+    tenant_id: str | None = Query(None),
+) -> RequestContext:
+    """
+    Tollgate プロキシヘッダーまたは直接クエリからリクエストコンテキストを解決する。
+    ENFORCE_TOLLGATE_AUTH が有効な場合は必須ヘッダー (X-Tenant-ID, X-Key-ID) を検証する。
+    """
+    if ENFORCE_TOLLGATE_AUTH:
+        if not x_tenant_id or not x_key_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Tollgate authentication required: Missing X-Tenant-ID or X-Key-ID header",
+            )
+
+    resolved_tenant = (x_tenant_id or tenant_id or DEFAULT_TENANT_ID).strip()
+    is_proxied = bool(x_tenant_id and x_key_id)
+
+    return RequestContext(
+        tenant_id=resolved_tenant,
+        key_id=x_key_id,
+        key_prefix=x_key_prefix,
+        service_id=x_service_id,
+        is_proxied=is_proxied,
+    )
 
 
 def get_tenant_id(
-    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
-    tenant_id: str | None = Query(None),
+    ctx: RequestContext = Depends(get_request_context),
 ) -> str:
-    """ヘッダーまたはクエリパラメータからテナントIDを解決する。"""
-    tid = x_tenant_id or tenant_id or "tenant_default"
-    return tid.strip()
+    """リクエストコンテキストからテナントIDを解決する（後方互換性用）。"""
+    return ctx.tenant_id
 
 
 def require_internal_secret(
