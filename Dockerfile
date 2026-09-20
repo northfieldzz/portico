@@ -1,5 +1,5 @@
 # ─── Builder Stage ──────────────────────────────────────────────────
-FROM python:3.13-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /build
 
@@ -17,7 +17,7 @@ COPY src/ ./src/
 RUN uv build --wheel --out-dir /dist
 
 # ─── Production Runner Stage ─────────────────────────────────────────
-FROM python:3.13-slim AS runner
+FROM python:3.14-slim AS runner
 
 LABEL maintainer="IT Context Platform"
 LABEL service="portico"

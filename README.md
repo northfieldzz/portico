@@ -1,6 +1,6 @@
 # Portico — MCP Gateway Integration Hub
 
-[![Python](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-009688.svg)](https://fastapi.tiangolo.com/)
 [![FastMCP](https://img.shields.io/badge/FastMCP-2.0+-green.svg)](https://github.com/jlowin/fastmcp)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791.svg)](https://www.postgresql.org/)
@@ -157,7 +157,7 @@ portico/
 
 ### 前提条件
 - Docker & Docker Compose
-- （ローカル実行時）Python 3.13+ および [uv](https://github.com/astral-sh/uv)
+- （ローカル実行時）Python 3.14+ および [uv](https://github.com/astral-sh/uv)
 
 ### 1. Docker Compose での起動 (推奨)
 

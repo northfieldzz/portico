@@ -2,7 +2,7 @@
 name = "portico"
 version = "0.1.0"
 description = "Portico — MCP Gateway Integration Hub"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.111.0,<1.0",
     "uvicorn[standard]>=0.29.0,<1.0",
