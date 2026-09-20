@@ -13,3 +13,7 @@
 **Vulnerability:** The generic exception handler in `dynamic_call_tool` was directly interpolating the raw exception message into the user-facing text response, potentially exposing internal server state or stack trace information to external clients.
 **Learning:** Returning raw exception details in HTTP/MCP responses is a known security anti-pattern (CWE-209: Generation of Error Message Containing Sensitive Information). It gives attackers insights into the internal architecture, libraries used, or system state.
 **Prevention:** Catch generic exceptions gracefully, log the detailed error internally using `logger.exception()`, and return a standardized, opaque error message (like "Internal Server Error") to the client.
+## 2025-02-23 - Hardcoded Fallback Secret in Configuration
+**Vulnerability:** A hardcoded static string `itcp_internal_service_secret_key_888` was used as a fallback for the `INTERNAL_SERVICE_SECRET` environment variable in `src/portico/core/config.py`.
+**Learning:** Hardcoded fallback values can inadvertently be deployed to production, allowing attackers who know the source code to authenticate against internal endpoints.
+**Prevention:** Use a secure, dynamically generated random string (e.g., `secrets.token_hex(32)`) as the fallback value for secrets when the environment variable is absent. This prevents unauthorized access even if the configuration is mismanaged in development or production.

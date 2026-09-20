@@ -5,6 +5,7 @@ MCP Gateway — 設定管理モジュール
 from __future__ import annotations
 
 import os
+import secrets
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", os.getenv("ENV", "development")).lower()
 ALLOW_LOCAL_MCP_SERVERS = os.getenv(
@@ -24,7 +25,7 @@ MAX_SERVERS_PER_TENANT = int(os.getenv("MAX_SERVERS_PER_TENANT", "50"))
 
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", "itcp_internal_service_secret_key_888")
+INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", secrets.token_hex(32))
 
 # Tollgate リバースプロキシ連携設定
 ENFORCE_TOLLGATE_AUTH = os.getenv("ENFORCE_TOLLGATE_AUTH", "false").lower() in ("true", "1", "yes")
