@@ -30,3 +30,7 @@ INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", "itcp_internal_se
 ENFORCE_TOLLGATE_AUTH = os.getenv("ENFORCE_TOLLGATE_AUTH", "false").lower() in ("true", "1", "yes")
 DEFAULT_TENANT_ID = os.getenv("DEFAULT_TENANT_ID", "tenant_default")
 
+# 外部 MCP サーバー連携・キャッシュ設定
+TOOL_CACHE_TTL_SECONDS = int(os.getenv("TOOL_CACHE_TTL_SECONDS", "60"))
+EXTERNAL_MCP_TIMEOUT_SECONDS = float(os.getenv("EXTERNAL_MCP_TIMEOUT_SECONDS", "5.0"))
+

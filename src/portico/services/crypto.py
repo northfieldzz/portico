@@ -20,6 +20,26 @@ PREFIX: Final[str] = "enc:v1:"
 DEFAULT_KEY_SALT: Final[str] = "itcp_master_secret_encryption_salt_2026"
 
 
+def validate_crypto_config() -> None:
+    """
+    暗号化キー設定の検証。
+    本番環境 (ENVIRONMENT == 'production') において SECRET_ENCRYPTION_KEY が未設定またはデフォルト値の場合は
+    安全のため RuntimeError を送出する。非本番環境では警告ログを出力する。
+    """
+    env_key = os.getenv("SECRET_ENCRYPTION_KEY")
+    env = os.getenv("ENVIRONMENT", os.getenv("ENV", "development")).lower()
+    if env == "production":
+        if not env_key or not env_key.strip() or env_key == DEFAULT_KEY_SALT:
+            raise RuntimeError(
+                "CRITICAL SECURITY CONFIGURATION ERROR: SECRET_ENCRYPTION_KEY must be set in production environment!"
+            )
+    else:
+        if not env_key:
+            logger.warning(
+                "SECRET_ENCRYPTION_KEY is not set. Using default fallback key for development. Do not use in production!"
+            )
+
+
 def _get_key(custom_key: bytes | None = None) -> bytes:
     """32バイト (256ビット) の AES 鍵を取得または導出する。"""
     if custom_key:

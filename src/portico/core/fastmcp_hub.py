@@ -21,13 +21,20 @@ import mcp.types
 from mcp.server.lowlevel.server import request_ctx
 
 
-def get_current_mcp_context() -> tuple[str, list[str] | None]:
+from portico.schemas.context import RequestContext
+
+
+def get_current_mcp_context() -> tuple[str, list[str] | None, RequestContext]:
     """
-    SSE 接続またはリクエストのコンテキストからテナント ID とスコープを解決する。
-    HTTP ヘッダー (X-Tenant-ID / X-Scopes) およびクエリパラメータ (?tenant_id=...&scopes=...) の双方に対応。
+    SSE 接続またはリクエストのコンテキストからテナント ID、スコープ、認証コンテキストを解決する。
+    HTTP ヘッダー (X-Tenant-ID / X-Key-ID / X-Scopes 等) およびクエリパラメータに対応。
     """
     tenant_id = "default"
     scopes: list[str] | None = None
+    key_id: str | None = None
+    key_prefix: str | None = None
+    service_id: str | None = None
+
     try:
         ctx = request_ctx.get()
         req = getattr(ctx, "request", None)
@@ -41,6 +48,11 @@ def get_current_mcp_context() -> tuple[str, list[str] | None]:
                 if q_tenant:
                     tenant_id = q_tenant
 
+            # Tollgate キー情報
+            key_id = req.headers.get("x-key-id")
+            key_prefix = req.headers.get("x-key-prefix")
+            service_id = req.headers.get("x-service-id")
+
             # スコープの解決
             h_scopes = req.headers.get("x-scopes")
             if h_scopes:
@@ -51,7 +63,15 @@ def get_current_mcp_context() -> tuple[str, list[str] | None]:
                     scopes = [s.strip() for s in q_scopes.split(",") if s.strip()]
     except Exception:
         pass
-    return tenant_id, scopes
+
+    context = RequestContext(
+        tenant_id=tenant_id,
+        key_id=key_id,
+        key_prefix=key_prefix,
+        service_id=service_id,
+        is_proxied=bool(key_id),
+    )
+    return tenant_id, scopes, context
 
 
 @gateway_mcp._mcp_server.list_tools()
@@ -64,7 +84,7 @@ async def dynamic_list_tools() -> list[mcp.types.Tool]:
         get_aggregated_tools,
     )
 
-    tenant_id, scopes = get_current_mcp_context()
+    tenant_id, scopes, _ = get_current_mcp_context()
     tools_dicts = await get_aggregated_tools(tenant_id)
     if scopes is not None:
         tools_dicts = [t for t in tools_dicts if check_scope_authorized(scopes, t.get("scopes", []))]
@@ -108,9 +128,15 @@ async def dynamic_call_tool(name: str, arguments: dict) -> list[mcp.types.TextCo
     from fastapi import HTTPException
     from portico.services.server_service import dispatch_tool_call
 
-    tenant_id, scopes = get_current_mcp_context()
+    tenant_id, scopes, req_ctx = get_current_mcp_context()
     try:
-        res = await dispatch_tool_call(name, arguments or {}, tenant_id=tenant_id, scopes=scopes)
+        res = await dispatch_tool_call(
+            name,
+            arguments or {},
+            tenant_id=tenant_id,
+            scopes=scopes,
+            context=req_ctx,
+        )
         text = json.dumps(res, ensure_ascii=False) if not isinstance(res, str) else res
         return [mcp.types.TextContent(type="text", text=text)]
     except HTTPException as exc:

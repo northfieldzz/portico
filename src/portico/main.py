@@ -15,6 +15,7 @@ from portico.core.config import LOG_LEVEL, ROOT_PATH
 from portico.core.fastmcp_hub import gateway_mcp
 from portico.db.session import close_db_pool, init_mcp_db
 from portico.schemas.error import ErrorResponse, HTTPValidationError
+from portico.services.crypto import validate_crypto_config
 
 load_dotenv()
 
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """MCP Gateway 起動時のリソース初期化 (mcp スキーマの自己初期化) とクリーンアップ。"""
     logger.info("🚀 Starting IT Context Platform — MCP Gateway")
+    validate_crypto_config()
     await init_mcp_db()
     yield
     logger.info("🛑 Shutting down MCP Gateway")

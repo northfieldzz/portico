@@ -4,9 +4,11 @@ MCP Gateway — 外部 MCP サーバー管理 & ツール集約サービス
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -14,17 +16,37 @@ from typing import Any
 import httpx
 from fastapi import HTTPException, status as http_status
 
-
-from portico.core.config import MAX_SERVERS_PER_TENANT
+from portico.core.config import (
+    ALLOW_LOCAL_MCP_SERVERS,
+    ENVIRONMENT,
+    EXTERNAL_MCP_TIMEOUT_SECONDS,
+    MAX_SERVERS_PER_TENANT,
+    MOCK_EXTERNAL_APIS,
+    TOOL_CACHE_TTL_SECONDS,
+)
 from portico.db.session import get_db_pool, get_memory_external_servers
+from portico.schemas.context import RequestContext
 from portico.schemas.server import ServerCreateRequest
+from portico.services.audit import log_tool_execution
 from portico.services.crypto import (
     build_auth_headers,
     decrypt_auth_config,
     encrypt_auth_config,
 )
+from portico.services.url_validator import validate_mcp_url
 
 logger = logging.getLogger(__name__)
+
+# テナント別ツール一覧キャッシュ: {tenant_id: (timestamp, tools_list)}
+_TOOL_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+
+
+def invalidate_tool_cache(tenant_id: str | None = None) -> None:
+    """ツールキャッシュを無効化する。tenant_id 未指定時は全パージ。"""
+    if tenant_id:
+        _TOOL_CACHE.pop(tenant_id, None)
+    else:
+        _TOOL_CACHE.clear()
 
 
 def to_server_slug(name: str) -> str:
@@ -247,6 +269,7 @@ async def add_external_server(data: ServerCreateRequest, tenant_id: str) -> dict
         }
         get_memory_external_servers()[server_id] = saved
 
+    invalidate_tool_cache(tenant_id)
     return saved
 
 
@@ -275,6 +298,8 @@ async def remove_external_server(server_id: str, tenant_id: str) -> bool:
             del mem[server_id]
             deleted = True
 
+    if deleted:
+        invalidate_tool_cache(tenant_id)
     return deleted
 
 
@@ -331,51 +356,81 @@ async def get_external_servers_with_auth(tenant_id: str) -> list[dict[str, Any]]
     return results
 
 
-async def get_aggregated_tools(tenant_id: str) -> list[dict[str, Any]]:
+async def get_aggregated_tools(tenant_id: str, force_refresh: bool = False) -> list[dict[str, Any]]:
     """
     外部 MCP サーバーからクロールした全ツールを統合して返却する。
-    外部サーバーのツールには名前空間プレフィックス ({server_slug}__{tool_name}) を自動付与し、
-    サーバー間の同名ツールの衝突を防止する。
+    TTL キャッシュが存在し有効期限内の場合はキャッシュを即座に返却。
+    キャッシュミス時は外部 MCP サーバー群へ並列非同期リクエストを送信する。
     """
-    all_tools: list[dict[str, Any]] = []
+    now = time.time()
+    if not force_refresh and tenant_id in _TOOL_CACHE:
+        cached_time, cached_tools = _TOOL_CACHE[tenant_id]
+        if now - cached_time < TOOL_CACHE_TTL_SECONDS:
+            return cached_tools
+
     servers = await get_external_servers_with_auth(tenant_id)
+    if not servers:
+        _TOOL_CACHE[tenant_id] = (now, [])
+        return []
 
-    async with httpx.AsyncClient(timeout=3.0) as client:
-        for s in servers:
-            normalized = s["url"].rstrip("/")
-            headers = s["headers"]
-            server_scopes = s.get("scopes", [])
-            server_id = s.get("id")
-            server_name = s.get("name", "External")
-            server_slug = s.get("slug") or to_server_slug(server_name)
+    async def _fetch_from_single_server(s: dict[str, Any], client: httpx.AsyncClient) -> list[dict[str, Any]]:
+        normalized = s["url"].rstrip("/")
+        headers = s["headers"]
+        server_scopes = s.get("scopes", [])
+        server_id = s.get("id")
+        server_name = s.get("name", "External")
+        server_slug = s.get("slug") or to_server_slug(server_name)
 
-            # MCP 公式仕様 (JSON-RPC 2.0 / Streamable HTTP POST tools/list) でツール一覧を取得
-            try:
-                rpc_req = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
-                rpc_resp = await client.post(normalized, headers=headers, json=rpc_req)
-                if rpc_resp.status_code == 200:
-                    rdata = rpc_resp.json()
-                    tools_list = []
-                    if isinstance(rdata, dict):
-                        if "result" in rdata and isinstance(rdata["result"], dict):
-                            tools_list = rdata["result"].get("tools", [])
-                        elif "tools" in rdata:
-                            tools_list = rdata["tools"]
-                    for item in tools_list:
-                        if isinstance(item, dict) and "name" in item:
-                            orig_name = item["name"]
-                            namespaced_name = f"{server_slug}__{orig_name}"
-                            item["original_name"] = orig_name
-                            item["name"] = namespaced_name
-                            item["server_id"] = server_id
-                            item["server_name"] = server_name
-                            item["is_builtin"] = False
-                            item.setdefault("app", server_name)
-                            item.setdefault("scopes", server_scopes)
-                            all_tools.append(item)
-            except Exception as exc:
-                logger.warning("Failed to fetch tools via MCP JSON-RPC from %s (%s): %s", server_name, normalized, exc)
+        # 実行時動的 SSRF / DNS Rebinding 再検証
+        try:
+            validate_mcp_url(normalized, allow_local=ALLOW_LOCAL_MCP_SERVERS)
+        except Exception as exc:
+            if (MOCK_EXTERNAL_APIS or ENVIRONMENT != "production") and "Could not resolve hostname" in str(exc):
+                logger.debug("DNS resolution bypassed for %s in dev/mock mode: %s", normalized, exc)
+            else:
+                logger.warning("SSRF / DNS Rebinding check blocked request to %s (%s): %s", server_name, normalized, exc)
+                return []
 
+        # MCP 公式仕様 (JSON-RPC 2.0 / Streamable HTTP POST tools/list) でツール一覧を取得
+        try:
+            rpc_req = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+            rpc_resp = await client.post(normalized, headers=headers, json=rpc_req)
+            if rpc_resp.status_code == 200:
+                rdata = rpc_resp.json()
+                tools_list = []
+                if isinstance(rdata, dict):
+                    if "result" in rdata and isinstance(rdata["result"], dict):
+                        tools_list = rdata["result"].get("tools", [])
+                    elif "tools" in rdata:
+                        tools_list = rdata["tools"]
+                server_tools = []
+                for item in tools_list:
+                    if isinstance(item, dict) and "name" in item:
+                        orig_name = item["name"]
+                        namespaced_name = f"{server_slug}__{orig_name}"
+                        item["original_name"] = orig_name
+                        item["name"] = namespaced_name
+                        item["server_id"] = server_id
+                        item["server_name"] = server_name
+                        item["is_builtin"] = False
+                        item.setdefault("app", server_name)
+                        item.setdefault("scopes", server_scopes)
+                        server_tools.append(item)
+                return server_tools
+        except Exception as exc:
+            logger.warning("Failed to fetch tools via MCP JSON-RPC from %s (%s): %s", server_name, normalized, exc)
+        return []
+
+    async with httpx.AsyncClient(timeout=EXTERNAL_MCP_TIMEOUT_SECONDS) as client:
+        tasks = [_fetch_from_single_server(s, client) for s in servers]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    all_tools: list[dict[str, Any]] = []
+    for res in results:
+        if isinstance(res, list):
+            all_tools.extend(res)
+
+    _TOOL_CACHE[tenant_id] = (now, all_tools)
     return all_tools
 
 
@@ -409,97 +464,145 @@ async def dispatch_tool_call(
     params: dict[str, Any],
     tenant_id: str,
     scopes: list[str] | None = None,
+    context: RequestContext | None = None,
 ) -> Any:
     """
     ツール呼び出しのディスパッチ（ローカル実行または外部 MCP サーバーへのプロキシ）。
     FastMCP SSE ハンドラーおよび REST API の共通実行コア。
+    監査ログ (log_tool_execution) を自動記録する。
     """
-    aggregated = await get_aggregated_tools(tenant_id)
-    target_tool = next(
-        (t for t in aggregated if t.get("name") == tool_name or t.get("original_name") == tool_name),
-        None,
-    )
-    required_scopes = target_tool.get("scopes", []) if target_tool else []
+    start_time = time.perf_counter()
+    success = False
+    err_detail = None
 
-    if not check_scope_authorized(scopes, required_scopes):
-        raise HTTPException(
-            status_code=http_status.HTTP_403_FORBIDDEN,
-            detail=f"Access forbidden: Insufficient scope for tool '{tool_name}'. Required: {required_scopes}, Provided: {scopes or []}",
+    try:
+        aggregated = await get_aggregated_tools(tenant_id)
+        target_tool = next(
+            (t for t in aggregated if t.get("name") == tool_name or t.get("original_name") == tool_name),
+            None,
         )
+        required_scopes = target_tool.get("scopes", []) if target_tool else []
 
-    # 外部 MCP サーバーへの転送を試行 (認証ヘッダー & スコープ付きプロキシ)
-    servers = await get_external_servers_with_auth(tenant_id)
+        if not check_scope_authorized(scopes, required_scopes):
+            raise HTTPException(
+                status_code=http_status.HTTP_403_FORBIDDEN,
+                detail=f"Access forbidden: Insufficient scope for tool '{tool_name}'. Required: {required_scopes}, Provided: {scopes or []}",
+            )
 
-    target_server = None
-    exec_tool_name = tool_name
-    if "__" in tool_name:
-        prefix, _, orig = tool_name.partition("__")
-        for s in servers:
-            if s.get("slug") == prefix or s.get("id") == prefix or to_server_slug(s.get("name", "")) == prefix:
-                target_server = s
-                exec_tool_name = orig
-                break
+        # 外部 MCP サーバーへの転送を試行 (認証ヘッダー & スコープ付きプロキシ)
+        servers = await get_external_servers_with_auth(tenant_id)
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        # 2-A. 名前空間付きツール名の場合、対象サーバーにピンポイント送信
-        if target_server:
-            srv_scopes = target_server.get("scopes", [])
-            if not check_scope_authorized(scopes, srv_scopes):
-                raise HTTPException(
-                    status_code=http_status.HTTP_403_FORBIDDEN,
-                    detail=f"Access forbidden: Insufficient scope for server '{target_server.get('name')}'. Required: {srv_scopes}",
-                )
-            headers = target_server.get("headers", {})
-            try:
-                rpc_body = {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "tools/call",
-                    "params": {"name": exec_tool_name, "arguments": params},
-                }
-                resp = await client.post(target_server["url"].rstrip("/"), headers=headers, json=rpc_body)
-                if resp.status_code == 200:
-                    payload = resp.json()
-                    if isinstance(payload, dict):
-                        if "error" in payload:
-                            raise HTTPException(
-                                status_code=http_status.HTTP_502_BAD_GATEWAY,
-                                detail=f"External MCP server returned error: {payload['error']}",
-                            )
-                        if "result" in payload:
+        target_server = None
+        exec_tool_name = tool_name
+        if "__" in tool_name:
+            prefix, _, orig = tool_name.partition("__")
+            for s in servers:
+                if s.get("slug") == prefix or s.get("id") == prefix or to_server_slug(s.get("name", "")) == prefix:
+                    target_server = s
+                    exec_tool_name = orig
+                    break
+
+        async with httpx.AsyncClient(timeout=max(EXTERNAL_MCP_TIMEOUT_SECONDS, 10.0)) as client:
+            # 2-A. 名前空間付きツール名の場合、対象サーバーにピンポイント送信
+            if target_server:
+                srv_scopes = target_server.get("scopes", [])
+                if not check_scope_authorized(scopes, srv_scopes):
+                    raise HTTPException(
+                        status_code=http_status.HTTP_403_FORBIDDEN,
+                        detail=f"Access forbidden: Insufficient scope for server '{target_server.get('name')}'. Required: {srv_scopes}",
+                    )
+
+                # 実行時動的 SSRF / DNS Rebinding 再検証
+                target_url = target_server["url"].rstrip("/")
+                try:
+                    validate_mcp_url(target_url, allow_local=ALLOW_LOCAL_MCP_SERVERS)
+                except Exception as exc:
+                    if (MOCK_EXTERNAL_APIS or ENVIRONMENT != "production") and "Could not resolve hostname" in str(exc):
+                        logger.debug("DNS resolution bypassed for %s in dev/mock mode: %s", target_url, exc)
+                    else:
+                        raise HTTPException(
+                            status_code=http_status.HTTP_403_FORBIDDEN,
+                            detail=f"Target MCP URL blocked by runtime SSRF validation: {exc}",
+                        ) from exc
+
+                headers = target_server.get("headers", {})
+                try:
+                    rpc_body = {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/call",
+                        "params": {"name": exec_tool_name, "arguments": params},
+                    }
+                    resp = await client.post(target_url, headers=headers, json=rpc_body)
+                    if resp.status_code == 200:
+                        payload = resp.json()
+                        if isinstance(payload, dict):
+                            if "error" in payload:
+                                raise HTTPException(
+                                    status_code=http_status.HTTP_502_BAD_GATEWAY,
+                                    detail=f"External MCP server returned error: {payload['error']}",
+                                )
+                            if "result" in payload:
+                                success = True
+                                return payload["result"]
+                except HTTPException:
+                    raise
+                except Exception as exc:
+                    logger.warning("Failed MCP JSON-RPC call to %s: %s", target_server.get("name"), exc)
+                    raise HTTPException(
+                        status_code=http_status.HTTP_502_BAD_GATEWAY,
+                        detail=f"Failed to communicate with external MCP server '{target_server.get('name')}': {exc}",
+                    ) from exc
+
+            # 2-B. 汎用フォールバック
+            for s in servers:
+                srv_scopes = s.get("scopes", [])
+                if not check_scope_authorized(scopes, srv_scopes):
+                    continue
+
+                fallback_url = s["url"].rstrip("/")
+                try:
+                    validate_mcp_url(fallback_url, allow_local=ALLOW_LOCAL_MCP_SERVERS)
+                except Exception as exc:
+                    if (MOCK_EXTERNAL_APIS or ENVIRONMENT != "production") and "Could not resolve hostname" in str(exc):
+                        pass
+                    else:
+                        continue
+
+                headers = s.get("headers", {})
+                try:
+                    rpc_body = {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/call",
+                        "params": {"name": exec_tool_name, "arguments": params},
+                    }
+                    resp = await client.post(fallback_url, headers=headers, json=rpc_body)
+                    if resp.status_code == 200:
+                        payload = resp.json()
+                        if isinstance(payload, dict) and "result" in payload and "error" not in payload:
+                            success = True
                             return payload["result"]
-            except HTTPException:
-                raise
-            except Exception as exc:
-                logger.warning("Failed MCP JSON-RPC call to %s: %s", target_server.get("name"), exc)
-                raise HTTPException(
-                    status_code=http_status.HTTP_502_BAD_GATEWAY,
-                    detail=f"Failed to communicate with external MCP server '{target_server.get('name')}': {exc}",
-                ) from exc
+                except Exception:
+                    continue
 
-        # 2-B. 汎用フォールバック
-        for s in servers:
-            srv_scopes = s.get("scopes", [])
-            if not check_scope_authorized(scopes, srv_scopes):
-                continue
-
-            headers = s.get("headers", {})
-            try:
-                rpc_body = {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "tools/call",
-                    "params": {"name": exec_tool_name, "arguments": params},
-                }
-                resp = await client.post(s["url"].rstrip("/"), headers=headers, json=rpc_body)
-                if resp.status_code == 200:
-                    payload = resp.json()
-                    if isinstance(payload, dict) and "result" in payload and "error" not in payload:
-                        return payload["result"]
-            except Exception:
-                continue
-
-    raise HTTPException(
-        status_code=http_status.HTTP_404_NOT_FOUND,
-        detail=f"Unknown tool: '{tool_name}'. No matching registered tool or external MCP server found.",
-    )
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Unknown tool: '{tool_name}'. No matching registered tool or external MCP server found.",
+        )
+    except HTTPException as exc:
+        err_detail = str(exc.detail)
+        raise
+    except Exception as exc:
+        err_detail = str(exc)
+        raise
+    finally:
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        ctx = context or RequestContext(tenant_id=tenant_id)
+        log_tool_execution(
+            tool_name=tool_name,
+            duration_ms=duration_ms,
+            success=success,
+            context=ctx,
+            error_message=err_detail,
+        )
