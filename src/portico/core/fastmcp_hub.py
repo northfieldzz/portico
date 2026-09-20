@@ -118,5 +118,5 @@ async def dynamic_call_tool(name: str, arguments: dict) -> list[mcp.types.TextCo
         return [mcp.types.TextContent(type="text", text=f"Error: {err_msg}")]
     except Exception as exc:
         logger.exception("dynamic_call_tool error: %s", exc)
-        return [mcp.types.TextContent(type="text", text=f"Internal Server Error: {exc}")]
+        return [mcp.types.TextContent(type="text", text="Internal Server Error")]
 
