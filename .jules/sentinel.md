@@ -17,3 +17,8 @@
 **Vulnerability:** A hardcoded static string `itcp_internal_service_secret_key_888` was used as a fallback for the `INTERNAL_SERVICE_SECRET` environment variable in `src/portico/core/config.py`.
 **Learning:** Hardcoded fallback values can inadvertently be deployed to production, allowing attackers who know the source code to authenticate against internal endpoints.
 **Prevention:** Use a secure, dynamically generated random string (e.g., `secrets.token_hex(32)`) as the fallback value for secrets when the environment variable is absent. This prevents unauthorized access even if the configuration is mismanaged in development or production.
+
+## 2025-02-26 - SSRF Bypass via IPv4-mapped IPv6 Addresses
+**Vulnerability:** The SSRF protection logic in `validate_mcp_url` could be bypassed by using IPv4-mapped IPv6 addresses (e.g., `[::ffff:169.254.169.254]`), because the string comparison against the blocked exact IPs list did not normalize IPv6-mapped representations.
+**Learning:** Checking string representations of IPs against a blocklist is inherently fragile. IPv6 introduces mapped formats that resolve to the same underlying IPv4 targets but have different string values, bypassing simplistic blocklists.
+**Prevention:** Before comparing against blocked IP lists or applying validation rules, ensure the IP address object is normalized. If it's an IPv6 address that represents an IPv4 address, use `.ipv4_mapped` from the `ipaddress` module to convert it to its base IPv4 representation before proceeding with checks.
