@@ -63,6 +63,10 @@ def validate_mcp_url(url: str, allow_local: bool = False) -> None:
         except ValueError:
             continue
 
+        if getattr(ip, "ipv4_mapped", None):
+            ip = ip.ipv4_mapped
+            ip_str = str(ip)
+
         if ip_str in BLOCKED_EXACT_IPS:
             raise SSRFValidationError(f"Access to cloud metadata IP '{ip_str}' is strictly forbidden (SSRF)")
 
