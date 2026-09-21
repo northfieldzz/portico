@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import socket
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlparse
 
 import httpx
 from fastapi.testclient import TestClient
@@ -236,7 +237,9 @@ class TestToolRoutes:
 
             # 送信先 URL が alpha.example.com であること (beta には送られない)
             called_url = mock_post.call_args[0][0]
-            assert "https://alpha.example.com" in called_url
+            parsed_called_url = urlparse(called_url)
+            assert parsed_called_url.scheme == "https"
+            assert parsed_called_url.hostname == "alpha.example.com"
             call_json = mock_post.call_args[1].get("json", {})
             assert call_json.get("method") == "tools/call"
             assert call_json.get("params", {}).get("name") == "deploy"
