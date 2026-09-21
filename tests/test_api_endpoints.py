@@ -21,7 +21,13 @@ class TestDependencyInjection:
     def test_get_tenant_id_from_header(self, client: TestClient):
         """X-Tenant-ID ヘッダーからテナントIDが抽出される。"""
         mem = get_memory_external_servers()
-        mem["srv-h1"] = {"id": "srv-h1", "tenant_id": "tenant_header_123", "name": "H1", "url": "https://h1.example.com", "status": "active"}
+        mem["srv-h1"] = {
+            "id": "srv-h1",
+            "tenant_id": "tenant_header_123",
+            "name": "H1",
+            "url": "https://h1.example.com",
+            "status": "active",
+        }
         resp = client.get("/v1/servers", headers={"X-Tenant-ID": "tenant_header_123"})
         assert resp.status_code == 200
         data = resp.json()
@@ -31,7 +37,13 @@ class TestDependencyInjection:
     def test_get_tenant_id_from_query(self, client: TestClient):
         """クエリパラメータ tenant_id からテナントIDが抽出される。"""
         mem = get_memory_external_servers()
-        mem["srv-q1"] = {"id": "srv-q1", "tenant_id": "tenant_query_456", "name": "Q1", "url": "https://q1.example.com", "status": "active"}
+        mem["srv-q1"] = {
+            "id": "srv-q1",
+            "tenant_id": "tenant_query_456",
+            "name": "Q1",
+            "url": "https://q1.example.com",
+            "status": "active",
+        }
         resp = client.get("/v1/servers?tenant_id=tenant_query_456")
         assert resp.status_code == 200
         data = resp.json()
@@ -41,7 +53,13 @@ class TestDependencyInjection:
     def test_get_tenant_id_default(self, client: TestClient):
         """指定がない場合は tenant_default となる。"""
         mem = get_memory_external_servers()
-        mem["srv-d1"] = {"id": "srv-d1", "tenant_id": "tenant_default", "name": "D1", "url": "https://d1.example.com", "status": "active"}
+        mem["srv-d1"] = {
+            "id": "srv-d1",
+            "tenant_id": "tenant_default",
+            "name": "D1",
+            "url": "https://d1.example.com",
+            "status": "active",
+        }
         resp = client.get("/v1/servers")
         assert resp.status_code == 200
         data = resp.json()
@@ -102,7 +120,6 @@ class TestServerRoutes:
                 assert data["status"] == "active"
                 assert data["tenant_id"] == "tenant_srv_test"
 
-
     def test_delete_nonexistent_server_returns_404(self, client: TestClient):
         """存在しない外部サーバーの削除は 404 となる。"""
         resp = client.delete("/v1/servers/ext-nonexist", headers={"X-Tenant-ID": "tenant_srv_test"})
@@ -124,14 +141,12 @@ class TestServerRoutes:
         assert resp.json()["status"] == "success"
         assert resp.json()["id"] == "ext-123"
 
-
     def test_create_server_with_bearer_auth(self, client: TestClient):
         """Bearer 認証付きの外部サーバー登録と平文トークン非露出を検証。"""
         with patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
             with patch("httpx.AsyncClient.post", return_value=AsyncMock(status_code=200)):
                 resp = client.post(
-
                     "/v1/servers",
                     headers={"X-Tenant-ID": "tenant_api_auth"},
                     json={

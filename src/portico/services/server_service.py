@@ -14,7 +14,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from fastapi import HTTPException, status as http_status
+from fastapi import HTTPException
+from fastapi import status as http_status
 
 from portico.core.config import (
     ALLOW_LOCAL_MCP_SERVERS,
@@ -90,7 +91,7 @@ async def list_servers_for_tenant(tenant_id: str) -> list[dict[str, Any]]:
                     tenant_id,
                 )
                 for r in rows:
-                    atype = r["auth_type"] if "auth_type" in r else "none"
+                    atype = r.get("auth_type", "none")
                     has_a = bool(r.get("encrypted_auth_config")) or atype != "none"
                     servers.append(
                         {
@@ -171,10 +172,8 @@ async def add_external_server(data: ServerCreateRequest, tenant_id: str) -> dict
                 detail=f"Tenant infrastructure limit reached ({ext_count}/{MAX_SERVERS_PER_TENANT} servers). Cannot register more MCP servers.",
             )
 
-
     server_id = f"ext-{uuid.uuid4().hex[:8]}"
     now = datetime.now(UTC)
-
 
     # 認証ヘッダー構築
     auth_headers = build_auth_headers(
@@ -252,9 +251,9 @@ async def add_external_server(data: ServerCreateRequest, tenant_id: str) -> dict
                         "name": row["name"],
                         "url": row["url"],
                         "status": row["status"],
-                        "auth_type": row["auth_type"] if "auth_type" in row else data.auth_type,
+                        "auth_type": row.get("auth_type", data.auth_type),
                         "has_auth": has_auth,
-                        "scopes": _parse_scopes(row["scopes"]) if "scopes" in row else data.scopes,
+                        "scopes": _parse_scopes(row.get("scopes")) if "scopes" in row else data.scopes,
                         "is_builtin": False,
                         "created_at": row["created_at"].isoformat() if row["created_at"] else None,
                     }
@@ -301,15 +300,13 @@ async def remove_external_server(server_id: str, tenant_id: str) -> bool:
             logger.warning("DB delete failed in remove_external_server: %s", exc)
 
     mem = get_memory_external_servers()
-    if not deleted and server_id in mem:
-        if mem[server_id].get("tenant_id") == tenant_id:
-            del mem[server_id]
-            deleted = True
+    if not deleted and server_id in mem and mem[server_id].get("tenant_id") == tenant_id:
+        del mem[server_id]
+        deleted = True
 
     if deleted:
         invalidate_tool_cache(tenant_id)
     return deleted
-
 
 
 async def get_external_servers_with_auth(tenant_id: str) -> list[dict[str, Any]]:

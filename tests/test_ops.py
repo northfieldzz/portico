@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 
 from portico.main import app
 
-
 client = TestClient(app)
 
 

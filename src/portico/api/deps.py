@@ -5,6 +5,7 @@ MCP Gateway — 依存性注入 (DI) モジュール
 from __future__ import annotations
 
 import secrets
+
 from fastapi import Depends, Header, HTTPException, Query, status
 
 from portico.core.config import DEFAULT_TENANT_ID, ENFORCE_TOLLGATE_AUTH, INTERNAL_SERVICE_SECRET
@@ -22,12 +23,11 @@ def get_request_context(
     Tollgate プロキシヘッダーまたは直接クエリからリクエストコンテキストを解決する。
     ENFORCE_TOLLGATE_AUTH が有効な場合は必須ヘッダー (X-Tenant-ID, X-Key-ID) を検証する。
     """
-    if ENFORCE_TOLLGATE_AUTH:
-        if not x_tenant_id or not x_key_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Tollgate authentication required: Missing X-Tenant-ID or X-Key-ID header",
-            )
+    if ENFORCE_TOLLGATE_AUTH and (not x_tenant_id or not x_key_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tollgate authentication required: Missing X-Tenant-ID or X-Key-ID header",
+        )
 
     resolved_tenant = (x_tenant_id or tenant_id or DEFAULT_TENANT_ID).strip()
     is_proxied = bool(x_tenant_id and x_key_id)

@@ -46,9 +46,8 @@ def validate_mcp_url(url: str, allow_local: bool = False) -> None:
 
     # ホスト名文字列での簡易チェック
     lower_host = hostname.lower()
-    if not allow_local:
-        if lower_host in ("localhost", "127.0.0.1", "::1", "metadata.google.internal"):
-            raise SSRFValidationError(f"Access to localhost/internal host '{hostname}' is strictly forbidden (SSRF)")
+    if not allow_local and lower_host in ("localhost", "127.0.0.1", "::1", "metadata.google.internal"):
+        raise SSRFValidationError(f"Access to localhost/internal host '{hostname}' is strictly forbidden (SSRF)")
 
     # DNS 解決と IP アドレスのレンジ検査
     try:

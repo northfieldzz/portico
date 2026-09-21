@@ -7,8 +7,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 
 from portico.api.deps import get_request_context, get_scopes
 from portico.schemas.context import RequestContext
@@ -57,4 +56,3 @@ async def execute_tool(
         context=ctx,
     )
     return ToolExecutionResponse(tool=tool_name, result=result)
-

@@ -4,10 +4,14 @@ MCP Gateway — FastMCP ハブインスタンス管理 (10サービス 50ツー�
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any
 
+import mcp.types
 from fastmcp import FastMCP
+from mcp.server.lowlevel.server import request_ctx
+
+from portico.schemas.context import RequestContext
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +20,6 @@ gateway_mcp = FastMCP("IT Context MCP Gateway")
 
 
 # ── Dynamic Multi-tenant MCP Protocol Handlers (tools/list & tools/call) ────
-import json
-import mcp.types
-from mcp.server.lowlevel.server import request_ctx
-
-
-from portico.schemas.context import RequestContext
 
 
 def get_current_mcp_context() -> tuple[str, list[str] | None, RequestContext]:
@@ -126,6 +124,7 @@ async def dynamic_call_tool(name: str, arguments: dict) -> list[mcp.types.TextCo
     ローカルディスパッチまたは外部 MCP サーバーへの認証ヘッダー付きプロキシ転送を行う。
     """
     from fastapi import HTTPException
+
     from portico.services.server_service import dispatch_tool_call
 
     tenant_id, scopes, req_ctx = get_current_mcp_context()
@@ -145,4 +144,3 @@ async def dynamic_call_tool(name: str, arguments: dict) -> list[mcp.types.TextCo
     except Exception as exc:
         logger.exception("dynamic_call_tool error: %s", exc)
         return [mcp.types.TextContent(type="text", text="Internal Server Error")]
-

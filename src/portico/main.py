@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
@@ -40,7 +41,10 @@ async def lifespan(app: FastAPI):
 COMMON_RESPONSES = {
     401: {"model": ErrorResponse, "description": "API キーが無効または未指定"},
     403: {"model": ErrorResponse, "description": "アクセス権限不足 (管理者またはテナント権限不足)"},
-    404: {"model": ErrorResponse, "description": "指定されたツールまたはリソースが存在しない、または非公開 API へのアクセス遮断"},
+    404: {
+        "model": ErrorResponse,
+        "description": "指定されたツールまたはリソースが存在しない、または非公開 API へのアクセス遮断",
+    },
     422: {"model": HTTPValidationError, "description": "リクエストパラメータまたはボディのバリデーションエラー"},
     429: {"model": ErrorResponse, "description": "レートリミットまたは実行回数上限到達"},
     500: {"model": ErrorResponse, "description": "サーバー内部エラー"},

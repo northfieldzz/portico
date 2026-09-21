@@ -4,7 +4,7 @@ Unit tests for external MCP server management and tool aggregation service.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 from urllib.parse import urlparse
 
 import httpx
@@ -21,7 +21,6 @@ from portico.services.server_service import (
     list_servers_for_tenant,
     remove_external_server,
 )
-
 
 
 class TestServerService:
@@ -65,6 +64,7 @@ class TestServerService:
     @pytest.mark.asyncio
     async def test_add_external_server_success(self):
         """外部サーバーの登録、プローブ判定、AI Engine への通知が正常に行われる。"""
+
         async def mock_post(url, **kwargs):
             if "/sync" in str(url):
                 return httpx.Response(200, json={"status": "ok"})
@@ -91,8 +91,20 @@ class TestServerService:
             patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.216.34", 443))]),
         ):
             mem = get_memory_external_servers()
-            mem["s-1"] = {"id": "s-1", "tenant_id": "tenant_limit_test", "name": "S1", "url": "http://s1", "is_builtin": False}
-            mem["s-2"] = {"id": "s-2", "tenant_id": "tenant_limit_test", "name": "S2", "url": "http://s2", "is_builtin": False}
+            mem["s-1"] = {
+                "id": "s-1",
+                "tenant_id": "tenant_limit_test",
+                "name": "S1",
+                "url": "http://s1",
+                "is_builtin": False,
+            }
+            mem["s-2"] = {
+                "id": "s-2",
+                "tenant_id": "tenant_limit_test",
+                "name": "S2",
+                "url": "http://s2",
+                "is_builtin": False,
+            }
 
             req = ServerCreateRequest(name="S3", url="https://s3.example.com")
             with pytest.raises(HTTPException) as exc_info:
@@ -100,10 +112,8 @@ class TestServerService:
             assert exc_info.value.status_code == 429
             assert "Tenant infrastructure limit reached" in exc_info.value.detail
 
-
     @pytest.mark.asyncio
     async def test_remove_external_server(self):
-
         """外部サーバーの削除テスト。"""
         mem = get_memory_external_servers()
         mem["srv-del"] = {
@@ -122,7 +132,6 @@ class TestServerService:
         # 存在しないサーバーの削除は False
         deleted_nonexist = await remove_external_server("srv-nonexist", "tenant_del")
         assert deleted_nonexist is False
-
 
     @pytest.mark.asyncio
     async def test_delete_all_servers_for_tenant(self):
@@ -151,7 +160,10 @@ class TestServerService:
 
         mock_resp = httpx.Response(
             200,
-            json={"jsonrpc": "2.0", "result": {"tools": [{"name": "custom_deploy_tool", "description": "Custom deployer", "parameters": {}}]}},
+            json={
+                "jsonrpc": "2.0",
+                "result": {"tools": [{"name": "custom_deploy_tool", "description": "Custom deployer", "parameters": {}}]},
+            },
         )
 
         with patch("httpx.AsyncClient.post", return_value=mock_resp):

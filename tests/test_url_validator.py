@@ -78,9 +78,11 @@ class TestSSRFValidator:
 
     def test_dns_resolution_failure(self):
         """名前解決に失敗したホストは SSRFValidationError となる。"""
-        with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
-            with pytest.raises(SSRFValidationError, match="Could not resolve hostname"):
-                validate_mcp_url("https://nonexistent-host-xyz123.com/mcp")
+        with (
+            patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")),
+            pytest.raises(SSRFValidationError, match="Could not resolve hostname"),
+        ):
+            validate_mcp_url("https://nonexistent-host-xyz123.com/mcp")
 
 
 class TestServerCreateRequestSchema:

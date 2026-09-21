@@ -126,7 +126,13 @@ class TestScopeEnforcementInRoutes:
             body = kwargs.get("json", {})
             method = body.get("method")
             if method == "tools/list":
-                return httpx.Response(200, json={"jsonrpc": "2.0", "result": {"tools": [{"name": "infra_destroy", "scopes": ["infra:destroy"]}]}})
+                return httpx.Response(
+                    200,
+                    json={
+                        "jsonrpc": "2.0",
+                        "result": {"tools": [{"name": "infra_destroy", "scopes": ["infra:destroy"]}]},
+                    },
+                )
             if method == "tools/call":
                 return httpx.Response(200, json={"jsonrpc": "2.0", "result": {"destroyed": True}})
             return httpx.Response(404)
