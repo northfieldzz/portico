@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import time
+from urllib.parse import urlparse
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -112,7 +113,8 @@ async def test_parallel_tool_fetch_resilience():
     }
 
     async def mock_post(url, **kwargs):
-        if "ok.example.com" in str(url):
+        hostname = urlparse(str(url)).hostname
+        if hostname == "ok.example.com":
             return httpx.Response(200, json={"jsonrpc": "2.0", "result": {"tools": [{"name": "ok_tool"}]}})
         raise httpx.ConnectTimeout("Connection timeout to NG server")
 
