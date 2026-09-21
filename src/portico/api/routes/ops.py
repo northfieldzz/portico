@@ -46,8 +46,4 @@ async def readiness():
 @router.get("/metrics", response_class=PlainTextResponse)
 async def metrics():
     """Prometheus 互換メトリクスエンドポイント"""
-    return (
-        "# HELP portico_up Process availability\n"
-        "# TYPE portico_up gauge\n"
-        "portico_up 1\n"
-    )
+    return "# HELP portico_up Process availability\n# TYPE portico_up gauge\nportico_up 1\n"

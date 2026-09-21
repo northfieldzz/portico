@@ -4,9 +4,8 @@
 
 from __future__ import annotations
 
-import time
+from unittest.mock import patch
 from urllib.parse import urlparse
-from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -17,7 +16,6 @@ from portico.services.server_service import (
     add_external_server,
     get_aggregated_tools,
     invalidate_tool_cache,
-    remove_external_server,
 )
 
 

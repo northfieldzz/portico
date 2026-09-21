@@ -30,14 +30,10 @@ def validate_crypto_config() -> None:
     env = os.getenv("ENVIRONMENT", os.getenv("ENV", "development")).lower()
     if env == "production":
         if not env_key or not env_key.strip() or env_key == DEFAULT_KEY_SALT:
-            raise RuntimeError(
-                "CRITICAL SECURITY CONFIGURATION ERROR: SECRET_ENCRYPTION_KEY must be set in production environment!"
-            )
+            raise RuntimeError("CRITICAL SECURITY CONFIGURATION ERROR: SECRET_ENCRYPTION_KEY must be set in production environment!")
     else:
         if not env_key:
-            logger.warning(
-                "SECRET_ENCRYPTION_KEY is not set. Using default fallback key for development. Do not use in production!"
-            )
+            logger.warning("SECRET_ENCRYPTION_KEY is not set. Using default fallback key for development. Do not use in production!")
 
 
 def _get_key(custom_key: bytes | None = None) -> bytes:
@@ -112,9 +108,8 @@ def build_auth_headers(
     elif auth_type == "api_key" and auth_token:
         header_name = (auth_header_name or "X-API-Key").strip()
         headers[header_name] = auth_token.strip()
-    elif auth_type == "custom":
-        if custom_headers:
-            headers.update({str(k): str(v) for k, v in custom_headers.items()})
+    elif auth_type == "custom" and custom_headers:
+        headers.update({str(k): str(v) for k, v in custom_headers.items()})
 
     # custom_headers が追加指定されている場合はマージ
     if auth_type in ("bearer", "api_key") and custom_headers:

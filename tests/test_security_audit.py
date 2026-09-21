@@ -14,22 +14,25 @@ from portico.main import app
 from portico.schemas.context import RequestContext
 from portico.services.audit import log_tool_execution
 from portico.services.crypto import validate_crypto_config
-from portico.services.server_service import dispatch_tool_call
 
 
 def test_production_without_secret_key_raises():
     """本番環境 (ENVIRONMENT=production) で SECRET_ENCRYPTION_KEY 未設定時は起動時例外を送出すること"""
-    with patch.dict("os.environ", {"ENVIRONMENT": "production", "SECRET_ENCRYPTION_KEY": ""}):
-        with pytest.raises(RuntimeError, match="SECRET_ENCRYPTION_KEY must be set in production"):
-            validate_crypto_config()
+    with (
+        patch.dict("os.environ", {"ENVIRONMENT": "production", "SECRET_ENCRYPTION_KEY": ""}),
+        pytest.raises(RuntimeError, match="SECRET_ENCRYPTION_KEY must be set in production"),
+    ):
+        validate_crypto_config()
 
 
 def test_development_without_secret_key_logs_warning(caplog):
     """開発環境では例外にならず警告ログで許容されること"""
-    with patch.dict("os.environ", {"ENVIRONMENT": "development", "SECRET_ENCRYPTION_KEY": ""}):
-        with caplog.at_level(logging.WARNING):
-            validate_crypto_config()
-            assert "Using default fallback key for development" in caplog.text
+    with (
+        patch.dict("os.environ", {"ENVIRONMENT": "development", "SECRET_ENCRYPTION_KEY": ""}),
+        caplog.at_level(logging.WARNING),
+    ):
+        validate_crypto_config()
+        assert "Using default fallback key for development" in caplog.text
 
 
 def test_audit_logging_structure(caplog):
