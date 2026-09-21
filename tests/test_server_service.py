@@ -5,6 +5,7 @@ Unit tests for external MCP server management and tool aggregation service.
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -179,9 +180,10 @@ class TestServerService:
         }
 
         async def mock_post_collision(url, **kwargs):
-            if "slack.example.com" in str(url):
+            host = urlparse(str(url)).hostname
+            if host == "slack.example.com":
                 return httpx.Response(200, json={"jsonrpc": "2.0", "result": {"tools": [{"name": "send_message", "description": "Send via Slack"}]}})
-            if "teams.example.com" in str(url):
+            if host == "teams.example.com":
                 return httpx.Response(200, json={"jsonrpc": "2.0", "result": {"tools": [{"name": "send_message", "description": "Send via Teams"}]}})
             return httpx.Response(404)
 
