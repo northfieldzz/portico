@@ -65,23 +65,23 @@ class TestServerService:
     @pytest.mark.asyncio
     async def test_add_external_server_success(self):
         """外部サーバーの登録、プローブ判定、AI Engine への通知が正常に行われる。"""
-        with patch("socket.getaddrinfo") as mock_dns:
-            mock_dns.return_value = [(2, 1, 6, "", ("93.184.216.34", 443))]
-            req = ServerCreateRequest(name="Jira MCP", url="https://jira.mcp.example.com")
-
         async def mock_post(url, **kwargs):
             if "/sync" in str(url):
                 return httpx.Response(200, json={"status": "ok"})
             return httpx.Response(200, json={"jsonrpc": "2.0", "result": {"tools": []}})
 
-        with patch("httpx.AsyncClient.post", side_effect=mock_post) as mock_p:
-            res = await add_external_server(req, tenant_id="tenant_jira")
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = [(2, 1, 6, "", ("93.184.216.34", 443))]
+            req = ServerCreateRequest(name="Jira MCP", url="https://jira.mcp.example.com")
 
-            assert res["name"] == "Jira MCP"
-            assert res["url"] == "https://jira.mcp.example.com"
-            assert res["status"] == "active"
-            assert res["tenant_id"] == "tenant_jira"
-            assert res["is_builtin"] is False
+            with patch("httpx.AsyncClient.post", side_effect=mock_post) as mock_p:
+                res = await add_external_server(req, tenant_id="tenant_jira")
+
+                assert res["name"] == "Jira MCP"
+                assert res["url"] == "https://jira.mcp.example.com"
+                assert res["status"] == "active"
+                assert res["tenant_id"] == "tenant_jira"
+                assert res["is_builtin"] is False
 
     @pytest.mark.asyncio
     async def test_add_external_server_infrastructure_limit(self):

@@ -197,6 +197,14 @@ async def add_external_server(data: ServerCreateRequest, tenant_id: str) -> dict
 
     # 接続確認テスト (MCP JSON-RPC 2.0 tools/list によるプローブ)
     normalized_url = data.url.rstrip("/")
+    try:
+        validate_mcp_url(normalized_url, allow_local=ALLOW_LOCAL_MCP_SERVERS)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid MCP server URL: {exc}",
+        ) from exc
+
     probe_ok = False
     async with httpx.AsyncClient(timeout=3.0) as client:
         try:
