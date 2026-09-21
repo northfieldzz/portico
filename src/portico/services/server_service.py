@@ -196,8 +196,9 @@ async def add_external_server(data: ServerCreateRequest, tenant_id: str) -> dict
     )
 
     # 接続確認テスト (MCP JSON-RPC 2.0 tools/list によるプローブ)
+    normalized_url = data.url.rstrip("/")
     try:
-        normalized_url = validate_mcp_url(data.url, allow_local=ALLOW_LOCAL_MCP_SERVERS)
+        validate_mcp_url(normalized_url, allow_local=ALLOW_LOCAL_MCP_SERVERS)
     except ValueError as exc:
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
@@ -265,7 +266,7 @@ async def add_external_server(data: ServerCreateRequest, tenant_id: str) -> dict
             "id": server_id,
             "tenant_id": tenant_id,
             "name": data.name,
-            "url": normalized_url,
+            "url": data.url,
             "status": status,
             "auth_type": data.auth_type,
             "has_auth": has_auth,
