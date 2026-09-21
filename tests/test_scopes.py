@@ -5,6 +5,7 @@ Unit tests for OAuth Scopes authorization and X-Scopes header enforcement in por
 from __future__ import annotations
 
 from unittest.mock import patch
+from urllib.parse import urlparse
 
 import httpx
 from fastapi.testclient import TestClient
@@ -61,9 +62,10 @@ class TestScopeEnforcementInRoutes:
         async def mock_post(url, **kwargs):
             body = kwargs.get("json", {})
             method = body.get("method")
-            if "notion.example.com" in str(url) and method == "tools/list":
+            host = urlparse(str(url)).hostname
+            if host == "notion.example.com" and method == "tools/list":
                 return httpx.Response(200, json={"jsonrpc": "2.0", "result": {"tools": [{"name": "notion_search", "scopes": ["notion:read"]}]}})
-            if "secret.example.com" in str(url) and method == "tools/list":
+            if host == "secret.example.com" and method == "tools/list":
                 return httpx.Response(200, json={"jsonrpc": "2.0", "result": {"tools": [{"name": "secret_wipe", "scopes": ["secret:admin"]}]}})
             return httpx.Response(404)
 
