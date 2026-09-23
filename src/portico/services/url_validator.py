@@ -70,6 +70,10 @@ def validate_mcp_url(url: str, allow_local: bool = False) -> None:
             raise SSRFValidationError(f"Access to cloud metadata IP '{ip_str}' is strictly forbidden (SSRF)")
 
         if not allow_local:
+            # SECURITY: Unspecified IPs (0.0.0.0, ::) evaluate to False for is_private in some cases
+            # and must be explicitly blocked to prevent SSRF bypass.
+            if getattr(ip, "is_unspecified", False) and ip.is_unspecified:
+                raise SSRFValidationError(f"Access to unspecified IP '{ip_str}' is forbidden (SSRF)")
             if ip.is_loopback:
                 raise SSRFValidationError(f"Access to loopback IP '{ip_str}' is forbidden (SSRF)")
             if ip.is_private:

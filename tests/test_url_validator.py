@@ -56,6 +56,15 @@ class TestSSRFValidator:
             with pytest.raises(SSRFValidationError, match="strictly forbidden"):
                 validate_mcp_url(f"http://{host}/mcp", allow_local=False)
 
+    def test_unspecified_ips_blocked_by_default(self):
+        """allow_local=False の場合、unspecified IP (0.0.0.0, ::) は遮断される。"""
+        unspecified_ips = ["0.0.0.0", "::"]
+        for ip in unspecified_ips:
+            with patch("socket.getaddrinfo") as mock_dns:
+                mock_dns.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 80))]
+                with pytest.raises(SSRFValidationError, match="unspecified IP"):
+                    validate_mcp_url(f"http://[{ip}]/mcp" if ":" in ip else f"http://{ip}/mcp", allow_local=False)
+
     def test_private_network_ips_blocked_by_default(self):
         """allow_local=False の場合、プライベート IP (10.x, 192.168.x, 172.16.x) は遮断される。"""
         private_ips = ["10.0.0.1", "192.168.1.50", "172.16.0.10"]
