@@ -30,4 +30,7 @@
 **Vulnerability:** The SSRF validation filter could be bypassed using non-global IPs like Carrier-Grade NAT (CGNAT, e.g., `100.64.0.1` / `100.64.0.0/10`) because Python `ipaddress` module's `is_private` check evaluates them to `False`, potentially allowing requests to internal provider services or other restricted ranges.
 **Learning:** Python's `ipaddress` `is_private` only covers standard RFC 1918 private subnets and not all unroutable or non-public IP ranges. To determine if an IP is meant for the public internet, checking `getattr(ip, "is_global", None) is False` is the most robust way to catch non-global IPs.
 **Prevention:** In addition to `is_private`, `is_loopback`, `is_unspecified`, etc., always check `getattr(ip, "is_global", None) is False` to catch other non-global IP ranges like CGNAT.
-
+## 2025-02-27 - Python ipaddress module SSRF Bypass with Non-Global IPs
+**Vulnerability:** The SSRF validation filter could be bypassed using non-global IPs like CGNAT (`100.64.0.1`) because `ipaddress` `is_private` check evaluates them to `False`, potentially allowing requests to internal provider services or other restricted ranges.
+**Learning:** Python's `ipaddress` `is_private` does not cover all unroutable or non-public IP ranges. The standard way to determine if an IP is meant for the public internet is to use `is_global`, but since not all IP variants may guarantee its presence, `getattr(ip, 'is_global', None) is False` is the most robust check.
+**Prevention:** In addition to `is_private`, `is_loopback`, etc., always check `getattr(ip, "is_global", None) is False` to catch other non-global IP ranges like CGNAT.
