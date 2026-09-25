@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 from urllib.parse import urlparse
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from portico.core.config import INTERNAL_SERVICE_SECRET
@@ -163,31 +164,30 @@ class TestServerRoutes:
                 assert "super-secret-token" not in resp.text
 
 
-class TestToolRoutes:
-    """api/routes/tools.py のテスト。"""
+class TestToolDispatchService:
+    """ツールディスパッチおよびプロキシ実行ロジックのテスト。"""
 
-    def test_list_tools_empty_when_no_servers(self, client: TestClient):
-        """外部サーバー未登録時のツールマニフェスト一覧は空。"""
-        resp = client.get("/v1/tools", headers={"X-Tenant-ID": "tenant_tool_test"})
-        assert resp.status_code == 200
-        tools = resp.json()
-        assert isinstance(tools, list)
-        assert len(tools) == 0
+    @pytest.mark.asyncio
+    async def test_execute_unknown_tool_returns_404(self):
+        """未登録のツール呼び出しは HTTPException(404) となる。"""
+        from fastapi import HTTPException
+        from portico.services.server_service import dispatch_tool_call
 
-    def test_execute_unknown_tool_returns_404(self, client: TestClient):
-        """未登録のツール呼び出しは 404 となる。"""
-        resp = client.post(
-            "/v1/tools/completely_nonexistent_tool",
-            headers={"X-Tenant-ID": "tenant_tool_test"},
-            json={"foo": "bar"},
-        )
-        assert resp.status_code == 404
-        assert "Unknown tool" in resp.json()["detail"]
+        with pytest.raises(HTTPException) as exc_info:
+            await dispatch_tool_call(
+                "completely_nonexistent_tool",
+                {"foo": "bar"},
+                tenant_id="tenant_tool_test",
+            )
+        assert exc_info.value.status_code == 404
+        assert "Unknown tool" in exc_info.value.detail
 
-    def test_execute_external_tool_with_auth(self, client: TestClient):
+    @pytest.mark.asyncio
+    async def test_execute_external_tool_with_auth(self):
         """外部 MCP サーバーへのツール実行プロキシ時に認証ヘッダーが付与される。"""
         mem = get_memory_external_servers()
         from portico.services.crypto import encrypt_auth_config
+        from portico.services.server_service import dispatch_tool_call
 
         enc = encrypt_auth_config(
             {
@@ -206,13 +206,12 @@ class TestToolRoutes:
 
         mock_resp = httpx.Response(200, json={"jsonrpc": "2.0", "result": {"value": 42}})
         with patch("httpx.AsyncClient.post", return_value=mock_resp) as mock_post:
-            resp = client.post(
-                "/v1/tools/ext_calc",
-                headers={"X-Tenant-ID": "tenant_proxy_auth"},
-                json={"x": 20, "y": 22},
+            result = await dispatch_tool_call(
+                "ext_calc",
+                {"x": 20, "y": 22},
+                tenant_id="tenant_proxy_auth",
             )
-            assert resp.status_code == 200
-            assert resp.json()["result"]["value"] == 42
+            assert result["value"] == 42
 
             # プロキシリクエストのヘッダーに Bearer トークンが付与されていること
             mock_post.assert_awaited()
@@ -222,9 +221,12 @@ class TestToolRoutes:
             assert call_json.get("method") == "tools/call"
             assert call_json.get("params", {}).get("name") == "ext_calc"
 
-    def test_execute_namespaced_tool_targeted_routing(self, client: TestClient):
+    @pytest.mark.asyncio
+    async def test_execute_namespaced_tool_targeted_routing(self):
         """名前空間付きツール名 ({server_slug}__{tool}) で呼び出した際、対象サーバーにのみプロキシ転送されることを検証。"""
         mem = get_memory_external_servers()
+        from portico.services.server_service import dispatch_tool_call
+
         mem["srv-alpha"] = {
             "id": "srv-alpha",
             "tenant_id": "tenant_route_test",
@@ -242,13 +244,12 @@ class TestToolRoutes:
 
         with patch("httpx.AsyncClient.post", return_value=mock_post_resp) as mock_post:
             # Alpha 側の名前空間で実行
-            resp = client.post(
-                "/v1/tools/alpha_service__deploy",
-                headers={"X-Tenant-ID": "tenant_route_test"},
-                json={"env": "staging"},
+            result = await dispatch_tool_call(
+                "alpha_service__deploy",
+                {"env": "staging"},
+                tenant_id="tenant_route_test",
             )
-            assert resp.status_code == 200
-            assert resp.json()["result"]["server"] == "alpha"
+            assert result["server"] == "alpha"
 
             # 送信先 URL が alpha.example.com であること (beta には送られない)
             called_url = mock_post.call_args[0][0]
@@ -258,3 +259,4 @@ class TestToolRoutes:
             call_json = mock_post.call_args[1].get("json", {})
             assert call_json.get("method") == "tools/call"
             assert call_json.get("params", {}).get("name") == "deploy"
+

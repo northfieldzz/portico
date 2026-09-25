@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from portico.api.routes import internal, ops, servers, tools
+from portico.api.routes import internal, ops, servers
 
 gateway_router = APIRouter()
 
@@ -25,5 +25,5 @@ gateway_router.include_router(internal_router)
 # 外部サービス提供用 v1 API ルート (/v1/*)
 v1_router = APIRouter(prefix="/v1")
 v1_router.include_router(servers.router)
-v1_router.include_router(tools.router)
 gateway_router.include_router(v1_router)
+

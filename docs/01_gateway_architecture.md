@@ -10,14 +10,14 @@ MCP Gateway は、AI Engine からの指示を受け取り、実際の外部 Saa
 
 ```mermaid
 flowchart TD
-    AI["AI Engine (オーケストレーター)"]
+    AI["AI Engine / MCP クライアント<br/>(Claude Desktop, Cursor, LangGraph 等)"]
     
     subgraph Gateway ["MCP Gateway (Port 8001: 実行基盤)"]
         ROUTER["FastAPI Router / FastMCP Hub"]
         
         subgraph Endpoints ["インターフェース"]
-            REST["REST API エンドポイント<br/>• POST /tools/{tool_name}<br/>• GET/POST /servers (外部 MCP 管理)"]
-            SSE["MCP/SSE エンドポイント<br/>• /sse (Model Context Protocol 準拠)"]
+            SSE["MCP/SSE エンドポイント<br/>• /v1/sse (Model Context Protocol 準拠)"]
+            REST["外部 MCP 管理 REST API<br/>• GET/POST/DELETE /v1/servers"]
         end
         
         subgraph Adapters ["テスト・デモ用ツール (tools/)<br/>※ PoC 検証用サンプル実装"]
@@ -31,28 +31,30 @@ flowchart TD
     EXT_SaaS["外部 SaaS API (Slack, Google 等)"]
     EXT_MCP["本番 / 顧客専用外部 MCP サーバー"]
 
-    AI -->|"REST 呼び出し (JSON)"| REST
-    AI -->|"MCP プロトコル"| SSE
+    AI -->|"MCP プロトコル (SSE)"| SSE
+    AI -.->|"サーバー管理 (REST)"| REST
     
-    REST --> Adapters
-    REST --> DB_POOL
-    REST -->|"プロキシ実行"| EXT_MCP
+    SSE --> Adapters
+    SSE --> DB_POOL
+    SSE -->|"プロキシ実行"| EXT_MCP
     
     Adapters -->|"OAuth / サービスアカウント"| EXT_SaaS
 ```
 
 ---
 
-## 2. 二重インターフェース (REST + MCP/SSE)
+## 2. インターフェース設計
 
-MCP Gateway は、クライアントの要件に応じて 2 系統のインターフェースを提供する。
+MCP Gateway は、ツール探索・実行を MCP プロトコルに一本化し、管理用 API を REST で提供する。
 
-1. **HTTP REST API (`/tools/{tool_name}`)**:
-   - AI Engine の LangGraph ワークフロー（`execute_actions` ノード）からシンプルに POST 呼び出し可能な REST エンドポイント。
-   - ペイロードに引数 JSON を渡し、即座に実行結果を受け取る同期モデル。
-2. **MCP / SSE エンドポイント (`/sse`)**:
-   - Anthropic の Model Context Protocol (MCP) 標準に準拠した Server-Sent Events (SSE) ストリーミングインターフェース。
-   - MCP クライアント（Claude Desktop 等）からの直接接続・ツール呼び出しに対応。
+1. **MCP / SSE エンドポイント (`/v1/sse`)**:
+   - Model Context Protocol (MCP) 標準に準拠した Server-Sent Events (SSE) ストリーミングインターフェース。
+   - ツール一覧取得（`tools/list`）およびツール実行（`tools/call`）を処理。
+   - `X-Gateway-Secret` 共有シークレット認証（新旧ローテーション対応）および Tollgate 連携ヘッダー透過に対応。
+2. **外部 MCP サーバー管理 REST API (`/v1/servers`)**:
+   - テナント別の外部 MCP サーバー登録・一覧・削除を行う管理インターフェース。
+
+
 
 ---
 

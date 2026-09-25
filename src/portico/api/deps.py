@@ -8,11 +8,43 @@ import secrets
 
 from fastapi import Depends, Header, HTTPException, Query, status
 
-from portico.core.config import DEFAULT_TENANT_ID, ENFORCE_TOLLGATE_AUTH, INTERNAL_SERVICE_SECRET
+from portico.core.config import (
+    DEFAULT_TENANT_ID,
+    GATEWAY_SECRET_HEADER,
+    INSECURE_NO_GATEWAY_AUTH,
+    INTERNAL_SERVICE_SECRET,
+    get_valid_gateway_secrets,
+)
 from portico.schemas.context import RequestContext
 
 
+def verify_gateway_secret(secret_value: str | None) -> bool:
+    """
+    Gateway 共有シークレット (X-Gateway-Secret または Bearer トークン) を検証する。
+    INSECURE_NO_GATEWAY_AUTH=true の場合は常に True。
+    新旧シークレット (ローテーション対応) のいずれかに一致すれば True を返す。
+    """
+    if INSECURE_NO_GATEWAY_AUTH:
+        return True
+
+    valid_secrets = get_valid_gateway_secrets()
+    if not valid_secrets:
+        return False
+
+    if not secret_value:
+        return False
+
+    # "Bearer <token>" 形式にも対応
+    token = secret_value.strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+
+    return any(secrets.compare_digest(token, s) for s in valid_secrets)
+
+
 def get_request_context(
+    x_gateway_secret: str | None = Header(None, alias="X-Gateway-Secret"),
+    authorization: str | None = Header(None, alias="Authorization"),
     x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
     x_key_id: str | None = Header(None, alias="X-Key-ID"),
     x_key_prefix: str | None = Header(None, alias="X-Key-Prefix"),
@@ -20,14 +52,26 @@ def get_request_context(
     tenant_id: str | None = Query(None),
 ) -> RequestContext:
     """
-    Tollgate プロキシヘッダーまたは直接クエリからリクエストコンテキストを解決する。
-    ENFORCE_TOLLGATE_AUTH が有効な場合は必須ヘッダー (X-Tenant-ID, X-Key-ID) を検証する。
+    Kura 仕様に準拠した Gateway リクエストコンテキスト解決 & 共有シークレット検証。
+    - クライアント指定の tenant_id とプロキシ指定の X-Tenant-ID に不一致がある場合は 403 Forbidden (Fail-Fast)。
+    - X-Gateway-Secret または Authorization ヘッダーによりゲートウェイ共有シークレットを検証。
+    - INSECURE_NO_GATEWAY_AUTH=true 時はシークレット検証をバイパス。
     """
-    if ENFORCE_TOLLGATE_AUTH and (not x_tenant_id or not x_key_id):
+    # 1. テナントコンフリクトの検証 (Fail-Fast)
+    if x_tenant_id and tenant_id and x_tenant_id.strip() != tenant_id.strip():
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Tollgate authentication required: Missing X-Tenant-ID or X-Key-ID header",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant ID conflict: Header X-Tenant-ID does not match query tenant_id",
         )
+
+    # 2. Gateway 共有シークレットの検証 (Kura 準拠)
+    secret_candidate = x_gateway_secret or authorization
+    if not INSECURE_NO_GATEWAY_AUTH:
+        if not verify_gateway_secret(secret_candidate):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Unauthorized: Missing or invalid gateway shared secret ({GATEWAY_SECRET_HEADER})",
+            )
 
     resolved_tenant = (x_tenant_id or tenant_id or DEFAULT_TENANT_ID).strip()
     is_proxied = bool(x_tenant_id and x_key_id)
@@ -39,6 +83,8 @@ def get_request_context(
         service_id=x_service_id,
         is_proxied=is_proxied,
     )
+
+
 
 
 def get_tenant_id(

@@ -32,6 +32,13 @@ def reset_memory_db():
 
 
 @pytest.fixture(autouse=True)
+def default_insecure_auth_for_tests(monkeypatch):
+    """テスト実行時は既定で INSECURE_NO_GATEWAY_AUTH=True とし、認証テスト時は個別に False に上書きする。"""
+    monkeypatch.setattr("portico.core.config.INSECURE_NO_GATEWAY_AUTH", True)
+    monkeypatch.setattr("portico.api.deps.INSECURE_NO_GATEWAY_AUTH", True)
+
+
+@pytest.fixture(autouse=True)
 def mock_db_pool_none():
     """DB接続プールをモックし、テスト中はインメモリフォールバックモードで動作させる。"""
     with (
@@ -39,6 +46,7 @@ def mock_db_pool_none():
         patch("portico.services.server_service.get_db_pool", new_callable=AsyncMock, return_value=None),
     ):
         yield
+
 
 
 @pytest.fixture
