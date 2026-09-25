@@ -1,20 +1,21 @@
 ---
-name: Feature request
-about: Suggest an idea for this project
-title: ''
-labels: ''
+name: 機能リクエスト・改善提案 (Feature request)
+about: 新機能のアイデアや既存機能の改善提案
+title: '[FEATURE] '
+labels: 'enhancement'
 assignees: ''
 
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+## 課題・背景
+解決したい問題や、現状の不便な点について記述してください。
+（例: 「... のユースケースにおいて、MCP サーバーの動的認証情報更新を行いたいが現在対応していない」など）
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+## 提案する解決策 / 機能
+どのような機能や動作を希望するか、具体的に記述してください。
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
+## 検討した代替案
+検討した別の方法や回避策があれば記述してください。
 
-**Additional context**
-Add any other context or screenshots about the feature request here.
+## 補足情報
+参考ドキュメント、関連する MCP 仕様、プロトタイプコード、スクリーンショットなどがあれば記述してください。

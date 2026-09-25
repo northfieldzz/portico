@@ -1,21 +1,51 @@
-# Security Policy
+# セキュリティポリシー (Security Policy)
 
-## Supported Versions
+Portico は、マルチテナント環境における MCP ゲートウェイとして、セキュリティと堅牢性を最優先に設計されています。本ドキュメントでは、サポート対象バージョンおよび脆弱性の報告手順について説明します。
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+---
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+## サポート対象バージョン
 
-## Reporting a Vulnerability
+最新のマイナーバージョンおよびパッチバージョンに対してセキュリティアップデートを提供します。
 
-Use this section to tell people how to report a vulnerability.
+| バージョン | サポート状況 |
+|:---|:---:|
+| 0.1.x (最新) | :white_check_mark: サポート対象 |
+| < 0.1.0 | :x: サポート終了 |
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+---
+
+## 脆弱性の報告手順
+
+Portico でセキュリティ上の脆弱性や懸念を発見した場合は、**公開の GitHub Issue や Pull Request を作成せず**、以下の手順で非公開にてご報告ください。
+
+1. **報告先**:
+   - [GitHub Security Advisories (非公開報告)](https://github.com/northfieldzz/portico/security/advisories/new) を通じてご報告ください。
+   - またはリポジトリのメンテナー宛にご連絡ください。
+
+2. **報告に含めていただきたい情報**:
+   - 脆弱性の概要および影響を受けるコンポーネント（例: `X-Gateway-Secret` 認証、SSRF 防止 URL 検証、カスタム MCP サーバー暗号化・ディスパッチ、テナント分離・監査ログ層等）
+   - 再現手順（PoC、リクエスト・curl 例、設定ファイルの再現例など）
+   - 想定される影響範囲（認証バイパス、テナント間データ漏洩、SSRF による内部ネットワーク侵入、DoS 等）
+   - 可能であれば修正案や緩和策
+
+3. **対応プロセス**:
+   - 報告を受信後、通常 **48 時間以内** に受領確認と初期トリアージを行います。
+   - 影響度を評価した上で修正パッチを作成・検証します。
+   - 修正版のリリース準備が整い次第、GitHub Security Advisory にて CVE/GHSA 識別子とともに公表・周知します。
+
+---
+
+## セキュリティ運用上の推奨事項
+
+本番環境で Portico を安全に運用するために、以下の設計原則および設定を遵守してください:
+
+- **ゲートウェイ共有シークレットの厳格な管理**:
+  - `GATEWAY_SHARED_SECRET` には推測不能な 32 文字以上のランダム文字列（`openssl rand -hex 32` 等）を設定してください。
+  - 本番運用時は `INSECURE_NO_GATEWAY_AUTH=false`（デフォルト）を維持し、認証スキップを絶対に行わないでください。
+- **暗号化マスターキーの安全な保持**:
+  - 外部 MCP サーバー認証情報（Bearer トークン、API キー）を暗号化するために、`ENCRYPTION_MASTER_KEY`（AES-256-GCM 用の 32 バイト base64 キー）を確実に設定してください。
+- **SSRF 防止機構の有効化**:
+  - `ALLOW_PRIVATE_IPS=false`（デフォルト）を維持し、外部 MCP サーバー登録時にプライベート IP や内部メタデータエンドポイント（`169.254.169.254` 等）へのアクセスを遮断してください。
+- **内部ネットワーク保護**:
+  - Portico は Tollgate 等のリバースプロキシ・API ゲートウェイの後方に配置し、外部インターネットから直接 Portico のポートを公開しない構成を推奨します。
