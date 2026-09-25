@@ -1,38 +1,33 @@
 ---
-name: Bug report
-about: Create a report to help us improve
-title: ''
-labels: ''
+name: バグ報告 (Bug report)
+about: 不具合やエラーの報告
+title: '[BUG] '
+labels: 'bug'
 assignees: ''
 
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+## 不具合の概要
+発生している問題・バグの内容を簡潔に記述してください。
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+## 再現手順
+1. '...' にアクセス / リクエスト送信
+2. ヘッダー / パラメータに '...' を設定
+3. エラーまたは想定外の挙動が発生
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+## 期待される挙動
+本来期待されていた正しい動作やレスポンスを記述してください。
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+## ログ・エラーメッセージ / スクリーンショット
+```
+（エラーログやスタックトレースがあればここに貼り付けてください）
+```
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+## 動作環境情報
+- OS: [例: Ubuntu 24.04, macOS Sonoma, Windows 11]
+- Python バージョン: [例: 3.14.0]
+- Portico バージョン / コミットハッシュ: [例: 0.1.0 / git sha]
+- 関連コンポーネント: [例: FastMCP SSE, Custom Server Dispatch, Database, Tollgate 連携]
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
-
-**Additional context**
-Add any other context about the problem here.
+## 補足情報
+その他、問題解決に役立つ情報（設定環境変数の抜粋（機密情報はマスキング）、構成図など）があれば記述してください。
