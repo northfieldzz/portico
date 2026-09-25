@@ -35,10 +35,11 @@ ENV PATH="/root/.local/bin:$PATH"
 
 # Install production package from wheel (with optional extras if specified)
 COPY --from=builder /dist /dist
-RUN if [ -n "$EXTRAS" ]; then \
-        uv pip install --system --no-cache /dist/*.whl"[$EXTRAS]"; \
+RUN WHEEL_FILE=$(ls /dist/*.whl | head -n 1) && \
+    if [ -n "$EXTRAS" ]; then \
+        uv pip install --system --no-cache "${WHEEL_FILE}[$EXTRAS]"; \
     else \
-        uv pip install --system --no-cache /dist/*.whl; \
+        uv pip install --system --no-cache "${WHEEL_FILE}"; \
     fi \
     && rm -rf /dist
 
