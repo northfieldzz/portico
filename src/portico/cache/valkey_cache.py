@@ -26,6 +26,7 @@ class ValkeyCache(BaseCache):
         if self._redis is None:
             try:
                 import redis.asyncio as aioredis
+
                 self._redis = aioredis.from_url(
                     self.url,
                     encoding="utf-8",

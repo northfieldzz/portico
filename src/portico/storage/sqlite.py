@@ -128,9 +128,7 @@ class SQLiteServerRepository(BaseServerRepository):
         await conn.commit()
         return await self.get_server(tenant_id, server_data["id"]) or server_data
 
-    async def update_server(
-        self, tenant_id: str, server_id: str, update_data: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    async def update_server(self, tenant_id: str, server_id: str, update_data: dict[str, Any]) -> dict[str, Any] | None:
         conn = await self._get_conn()
         fields = []
         values = []

@@ -37,9 +37,7 @@ class BaseServerRepository(ABC):
         pass
 
     @abstractmethod
-    async def update_server(
-        self, tenant_id: str, server_id: str, update_data: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    async def update_server(self, tenant_id: str, server_id: str, update_data: dict[str, Any]) -> dict[str, Any] | None:
         """既存サーバー定義を更新"""
         pass
 
