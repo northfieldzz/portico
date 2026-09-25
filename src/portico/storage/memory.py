@@ -40,9 +40,7 @@ class MemoryServerRepository(BaseServerRepository):
         self._store[tenant_id][s_id] = server_copy
         return server_copy
 
-    async def update_server(
-        self, tenant_id: str, server_id: str, update_data: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    async def update_server(self, tenant_id: str, server_id: str, update_data: dict[str, Any]) -> dict[str, Any] | None:
         curr = self._store.get(tenant_id, {}).get(server_id)
         if not curr:
             return None

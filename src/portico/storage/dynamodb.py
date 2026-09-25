@@ -26,12 +26,11 @@ class DynamoDBServerRepository(BaseServerRepository):
         if self._table is None:
             try:
                 import boto3
+
                 dynamodb = boto3.resource("dynamodb", region_name=self.region_name)
                 self._table = dynamodb.Table(self.table_name)
             except ImportError as exc:
-                raise RuntimeError(
-                    "boto3 is required to use DynamoDB storage backend. Install via: pip install 'portico[dynamodb]' (or uv add 'portico[dynamodb]')"
-                ) from exc
+                raise RuntimeError("boto3 is required to use DynamoDB storage backend. Install via: pip install 'portico[dynamodb]' (or uv add 'portico[dynamodb]')") from exc
         return self._table
 
     async def init_storage(self) -> None:
@@ -66,9 +65,8 @@ class DynamoDBServerRepository(BaseServerRepository):
 
         def _query():
             from boto3.dynamodb.conditions import Key
-            resp = table.query(
-                KeyConditionExpression=Key("PK").eq(pk) & Key("SK").begins_with("SERVER#")
-            )
+
+            resp = table.query(KeyConditionExpression=Key("PK").eq(pk) & Key("SK").begins_with("SERVER#"))
             return resp.get("Items", [])
 
         items = await asyncio.to_thread(_query)
@@ -112,9 +110,7 @@ class DynamoDBServerRepository(BaseServerRepository):
         await asyncio.to_thread(lambda: table.put_item(Item=item))
         return await self.get_server(tenant_id, server_id) or server_data
 
-    async def update_server(
-        self, tenant_id: str, server_id: str, update_data: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    async def update_server(self, tenant_id: str, server_id: str, update_data: dict[str, Any]) -> dict[str, Any] | None:
         curr = await self.get_server(tenant_id, server_id)
         if not curr:
             return None

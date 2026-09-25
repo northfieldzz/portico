@@ -38,13 +38,12 @@ class CosmosDBServerRepository(BaseServerRepository):
         if self._container is None:
             try:
                 from azure.cosmos.aio import CosmosClient
+
                 client = CosmosClient(self.endpoint, credential=self.key)
                 database = client.get_database_client(self.database_name)
                 self._container = database.get_container_client(self.container_name)
             except ImportError as exc:
-                raise RuntimeError(
-                    "azure-cosmos is required to use Cosmos DB storage backend. Install via: pip install 'portico[cosmos]' (or uv add 'portico[cosmos]')"
-                ) from exc
+                raise RuntimeError("azure-cosmos is required to use Cosmos DB storage backend. Install via: pip install 'portico[cosmos]' (or uv add 'portico[cosmos]')") from exc
         return self._container
 
     async def init_storage(self) -> None:
@@ -71,12 +70,7 @@ class CosmosDBServerRepository(BaseServerRepository):
         container = self._get_container()
         query = "SELECT * FROM c WHERE c.tenant_id = @tenant_id"
         parameters = [{"name": "@tenant_id", "value": tenant_id}]
-        items = [
-            item
-            async for item in container.query_items(
-                query=query, parameters=parameters, partition_key=tenant_id
-            )
-        ]
+        items = [item async for item in container.query_items(query=query, parameters=parameters, partition_key=tenant_id)]
         return [self._item_to_dict(it) for it in items]
 
     async def get_server(self, tenant_id: str, server_id: str) -> dict[str, Any] | None:
@@ -101,9 +95,7 @@ class CosmosDBServerRepository(BaseServerRepository):
         created = await container.upsert_item(item)
         return self._item_to_dict(created)
 
-    async def update_server(
-        self, tenant_id: str, server_id: str, update_data: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    async def update_server(self, tenant_id: str, server_id: str, update_data: dict[str, Any]) -> dict[str, Any] | None:
         curr = await self.get_server(tenant_id, server_id)
         if not curr:
             return None

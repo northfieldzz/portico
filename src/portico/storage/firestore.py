@@ -25,11 +25,10 @@ class FirestoreServerRepository(BaseServerRepository):
         if self._client is None:
             try:
                 from google.cloud import firestore
+
                 self._client = firestore.AsyncClient(project=self.project_id)
             except ImportError as exc:
-                raise RuntimeError(
-                    "google-cloud-firestore is required to use Firestore storage backend. Install via: pip install 'portico[firestore]' (or uv add 'portico[firestore]')"
-                ) from exc
+                raise RuntimeError("google-cloud-firestore is required to use Firestore storage backend. Install via: pip install 'portico[firestore]' (or uv add 'portico[firestore]')") from exc
         return self._client
 
     async def init_storage(self) -> None:
@@ -82,9 +81,7 @@ class FirestoreServerRepository(BaseServerRepository):
         await doc_ref.set(data)
         return data
 
-    async def update_server(
-        self, tenant_id: str, server_id: str, update_data: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    async def update_server(self, tenant_id: str, server_id: str, update_data: dict[str, Any]) -> dict[str, Any] | None:
         client = self._get_client()
         doc_id = f"{tenant_id}_{server_id}"
         doc_ref = client.collection(self.collection_name).document(doc_id)
