@@ -28,6 +28,7 @@ def get_current_mcp_context() -> tuple[str, list[str] | None, RequestContext]:
     HTTP ヘッダー (X-Gateway-Secret / Authorization / X-Tenant-ID / X-Key-ID / X-Scopes 等) に対応。
     """
     from fastapi import HTTPException, status
+
     from portico.api.deps import verify_gateway_secret
     from portico.core.config import (
         DEFAULT_TENANT_ID,
@@ -69,12 +70,11 @@ def get_current_mcp_context() -> tuple[str, list[str] | None, RequestContext]:
             service_id = req.headers.get("x-service-id")
 
             # Gateway 共有シークレット検証
-            if not INSECURE_NO_GATEWAY_AUTH:
-                if not verify_gateway_secret(gw_secret):
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail=f"Unauthorized: Missing or invalid gateway shared secret ({GATEWAY_SECRET_HEADER})",
-                    )
+            if not INSECURE_NO_GATEWAY_AUTH and not verify_gateway_secret(gw_secret):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"Unauthorized: Missing or invalid gateway shared secret ({GATEWAY_SECRET_HEADER})",
+                )
 
             # スコープの解決
             h_scopes = req.headers.get("x-scopes")

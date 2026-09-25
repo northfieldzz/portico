@@ -39,7 +39,6 @@ async def lifespan(app: FastAPI):
     await close_db_pool()
 
 
-
 COMMON_RESPONSES = {
     401: {"model": ErrorResponse, "description": "API キーが無効または未指定"},
     403: {"model": ErrorResponse, "description": "アクセス権限不足 (管理者またはテナント権限不足)"},

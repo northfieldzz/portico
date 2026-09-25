@@ -1,44 +1,65 @@
 # Portico — アーキテクチャ & FastMCP ハブ仕様書
 
-本ドキュメントは、Portico におけるサービス構造、FastAPI と FastMCP の統合設計、提供エンドポイント、および起動ライフサイクルについて定義する。
+本ドキュメントは、Portico（MCP Gateway）におけるサービス構造、FastAPI と FastMCP の統合設計、提供エンドポイント、および起動ライフサイクルについて定義する。
+
+---
+
+## 目次
+
+- [1. サービス概要とアーキテクチャ](#1-サービス概要とアーキテクチャ)
+- [2. インターフェース設計](#2-インターフェース設計)
+- [3. アプリケーションライフサイクル (lifespan)](#3-アプリケーションライフサイクル-lifespan)
+- [4. 環境変数マッピング (core/config.py)](#4-環境変数マッピング-coreconfigpy)
 
 ---
 
 ## 1. サービス概要とアーキテクチャ
 
-MCP Gateway は、AI Engine からの指示を受け取り、実際の外部 SaaS や社内システムへの安全な API 呼び出しを行う実行レイヤーである。
+MCP Gateway は、AI Engine や MCP クライアント（Claude Desktop, Cursor, LangGraph 等）からの指示を受け取り、実際の外部 SaaS や社内システムへの安全な API 呼び出しを行う実行レイヤーである。
 
 ```mermaid
 flowchart TD
     AI["AI Engine / MCP クライアント<br/>(Claude Desktop, Cursor, LangGraph 等)"]
+    GW["認証ゲートウェイ (Tollgate / Proxy)"]
     
-    subgraph Gateway ["MCP Gateway (Port 8001: 実行基盤)"]
-        ROUTER["FastAPI Router / FastMCP Hub"]
+    subgraph Portico ["Portico (MCP Gateway : 8001)"]
+        ROUTER["FastAPI Router / FastMCP Hub<br/>(X-Gateway-Secret 検証)"]
         
-        subgraph Endpoints ["インターフェース"]
-            SSE["MCP/SSE エンドポイント<br/>• /v1/sse (Model Context Protocol 準拠)"]
-            REST["外部 MCP 管理 REST API<br/>• GET/POST/DELETE /v1/servers"]
+        subgraph Endpoints ["公開インターフェース"]
+            SSE["MCP SSE<br/>• /v1/sse (tools/list, tools/call)"]
+            MGMT["外部 MCP 管理 REST<br/>• GET/POST/DELETE /v1/servers"]
         end
         
-        subgraph Adapters ["テスト・デモ用ツール (tools/)<br/>※ PoC 検証用サンプル実装"]
-            SLACK["slack_tool.py (招待・メッセージ通知)"]
-            GOOGLE["google_tool.py (アカウント・グループ作成)"]
+        subgraph CoreServices ["コアサービス"]
+            DISPATCH["動的ディスパッチャー / ツール集約"]
+            CACHE["TTL ツールキャッシュ"]
+            AUDIT["監査ログ・SSRF バリデーター"]
         end
         
-        DB_POOL["PostgreSQL プール (db/session.py)<br/>• mcp 独立スキーマ管理"]
+        subgraph Adapters ["組み込みリファレンスツール"]
+            SLACK["Slack Adapter"]
+            GOOGLE["Google Adapter"]
+        end
+        
+        DB_POOL["PostgreSQL プール<br/>• mcp 独立スキーマ (RLS)"]
     end
     
-    EXT_SaaS["外部 SaaS API (Slack, Google 等)"]
-    EXT_MCP["本番 / 顧客専用外部 MCP サーバー"]
+    EXT_SaaS["外部 SaaS (Slack / Google)"]
+    EXT_MCP["顧客・外部 MCP サーバー"]
 
-    AI -->|"MCP プロトコル (SSE)"| SSE
-    AI -.->|"サーバー管理 (REST)"| REST
+    AI -->|"リクエスト"| GW
+    GW -->|"MCP (SSE) + X-Gateway-Secret"| SSE
+    GW -.->|"管理 REST + X-Gateway-Secret"| MGMT
     
-    SSE --> Adapters
-    SSE --> DB_POOL
-    SSE -->|"プロキシ実行"| EXT_MCP
+    SSE --> ROUTER
+    MGMT --> ROUTER
+    ROUTER --> CoreServices
     
-    Adapters -->|"OAuth / サービスアカウント"| EXT_SaaS
+    CoreServices --> Adapters
+    CoreServices --> DB_POOL
+    CoreServices -->|"プロキシ実行"| EXT_MCP
+    
+    Adapters -->|"API 連携 (モック切替可)"| EXT_SaaS
 ```
 
 ---
@@ -54,11 +75,9 @@ MCP Gateway は、ツール探索・実行を MCP プロトコルに一本化し
 2. **外部 MCP サーバー管理 REST API (`/v1/servers`)**:
    - テナント別の外部 MCP サーバー登録・一覧・削除を行う管理インターフェース。
 
-
-
 ---
 
-## 3. アプリケーションライフサイクル (`lifespan`)
+## 3. アプリケーションライフサイクル (lifespan)
 
 `main.py` の起動時処理において、以下が実行される。
 
@@ -69,6 +88,8 @@ sequenceDiagram
     participant DB as PostgreSQL (mcp schema)
 
     Note over Main: 起動処理開始 (Startup)
+    Main->>Main: validate_crypto_config()
+    Main->>Main: validate_gateway_auth_config()
     Main->>DB: init_mcp_db() 呼び出し
     DB->>DB: CREATE SCHEMA IF NOT EXISTS mcp;
     DB->>DB: CREATE TABLE mcp.external_servers & RLS ポリシー作成
@@ -82,13 +103,20 @@ sequenceDiagram
 
 ---
 
-## 4. 環境変数マッピング (`core/config.py`)
+## 4. 環境変数マッピング (core/config.py)
 
 MCP Gateway が利用する環境変数一覧。
 
-| 環境変数名 | デフォルト値 | 説明 |
-|------------|--------------|------|
-| `ROOT_PATH` | `/gateway` | リバースプロキシ（Nginx / ALB）配下用のルートパス |
-| `LOG_LEVEL` | `INFO` | ログ出力レベル (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
-| `MOCK_EXTERNAL_APIS` | `true` | `true` の場合、外部 SaaS を実際に叩かずモックレスポンスを返却 |
-| `POSTGRES_URL` | `postgresql://...` | PostgreSQL 接続 URL (asyncpg) |
+| 環境変数名 | デフォルト値 | 必須 | 説明 |
+|------------|--------------|:---:|------|
+| `ENVIRONMENT` | `development` | 任意 | 実行環境 (`development` / `production`) |
+| `GATEWAY_SHARED_SECRET` | *(未設定)* | 本番必須 | ゲートウェイ共有シークレット (32文字以上。本番未設定時は起動時エラー) |
+| `GATEWAY_SHARED_SECRET_PREVIOUS` | *(未設定)* | 任意 | シークレットローテーション移行期間用の旧シークレット |
+| `GATEWAY_SECRET_HEADER` | `X-Gateway-Secret` | 任意 | シークレットを受け取るヘッダー名 |
+| `INSECURE_NO_GATEWAY_AUTH` | `false` | 任意 | `true` の場合、シークレット検証をバイパス (開発専用) |
+| `ROOT_PATH` | `/gateway` | 任意 | リバースプロキシ（Nginx / ALB）配下用のルートパス |
+| `LOG_LEVEL` | `INFO` | 任意 | ログ出力レベル (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `MOCK_EXTERNAL_APIS` | `true` | 任意 | `true` の場合、外部 SaaS を実際に叩かずモックレスポンスを返却 |
+| `POSTGRES_URL` | `postgresql://...` | 任意 | PostgreSQL 接続 URL (asyncpg) |
+| `SECRET_ENCRYPTION_KEY` | *(未設定時生成)* | 本番必須 | 外部サーバー認証情報暗号化キー (AES-256) |
+| `INTERNAL_SERVICE_SECRET` | *(未設定時生成)* | 推奨 | 内部サービス間専用通信シークレット |

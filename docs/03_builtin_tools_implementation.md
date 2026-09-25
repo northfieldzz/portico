@@ -1,7 +1,19 @@
-# MCP Gateway — テスト・デモ用リファレンスツール実装仕様書
+# Portico — テスト・デモ用リファレンスツール実装仕様書
 
-> **重要**: 本モジュール群（Slack, Google Workspace）は、**PoC 動作確認およびテスト・デモ検証を目的としたリファレンス実装（サンプルコード）** です。  
+本ドキュメントは、Portico（MCP Gateway）が PoC 動作確認およびテスト・デモ検証用として内包するリファレンスツール（Slack, Google Workspace）の実装仕様およびモック動作について定義する。
+
+> [!NOTE]
 > プラットフォーム本来の設計としては特定ツールに依存せず、オープンな **Model Context Protocol (MCP)** を介して本番用 MCP サーバーや顧客独自の社内システムを動的に接続・実行するゲートウェイ基盤として機能します。
+
+---
+
+## 目次
+
+- [1. テスト・デモ用リファレンスツール一覧](#1-テストデモ用リファレンスツール一覧)
+- [2. ツール実装詳細とパラメータ契約 (リファレンス)](#2-ツール実装詳細とパラメータ契約-リファレンス)
+  - [2.1. Slack アダプター (tools/slack_tool.py)](#21-slack-アダプター-toolsslack_toolpy)
+  - [2.2. Google Workspace アダプター (tools/google_tool.py)](#22-google-workspace-アダプター-toolsgoogle_toolpy)
+- [3. モックモード仕様 (MOCK_EXTERNAL_APIS=true)](#3-モックモード仕様-mock_external_apistrue)
 
 ---
 

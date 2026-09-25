@@ -135,6 +135,3 @@ def test_main_app_servers_endpoint_with_gateway_secret(monkeypatch):
     res = client.get("/v1/servers", headers=headers)
     assert res.status_code == 200
     assert isinstance(res.json(), list)
-
-
-
