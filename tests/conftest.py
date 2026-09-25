@@ -7,7 +7,6 @@ from __future__ import annotations
 import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 # Ensure portico/src is in sys.path
 _src_dir = str(Path(__file__).resolve().parent.parent / "src")
@@ -18,17 +17,23 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
-from portico.db.session import get_memory_external_servers
+from portico.cache.memory_cache import MemoryCache
 from portico.main import app
+from portico.storage.memory import MemoryServerRepository
 
 
 @pytest.fixture(autouse=True)
-def reset_memory_db():
-    """各テスト実行前にインメモリ外部サーバーディクショナリを初期化する。"""
-    mem = get_memory_external_servers()
-    mem.clear()
+def reset_storage_and_cache(monkeypatch):
+    """各テスト実行前にストレージとキャッシュをクリーンなメモリ状態にリセットする。"""
+    monkeypatch.setattr("portico.core.config.STORAGE_BACKEND", "memory")
+    monkeypatch.setattr("portico.core.config.CACHE_LAYER", "memory")
+    repo = MemoryServerRepository()
+    cache = MemoryCache()
+    monkeypatch.setattr("portico.storage.factory._storage_instance", repo)
+    monkeypatch.setattr("portico.cache.factory._cache_instance", cache)
     yield
-    mem.clear()
+    repo._store.clear()
+    cache._cache.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -36,16 +41,6 @@ def default_insecure_auth_for_tests(monkeypatch):
     """テスト実行時は既定で INSECURE_NO_GATEWAY_AUTH=True とし、認証テスト時は個別に False に上書きする。"""
     monkeypatch.setattr("portico.core.config.INSECURE_NO_GATEWAY_AUTH", True)
     monkeypatch.setattr("portico.api.deps.INSECURE_NO_GATEWAY_AUTH", True)
-
-
-@pytest.fixture(autouse=True)
-def mock_db_pool_none():
-    """DB接続プールをモックし、テスト中はインメモリフォールバックモードで動作させる。"""
-    with (
-        patch("portico.db.session.get_db_pool", new_callable=AsyncMock, return_value=None),
-        patch("portico.services.server_service.get_db_pool", new_callable=AsyncMock, return_value=None),
-    ):
-        yield
 
 
 @pytest.fixture

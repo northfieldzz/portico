@@ -17,6 +17,7 @@ import httpx
 from fastapi import HTTPException
 from fastapi import status as http_status
 
+from portico.cache.factory import get_cache_service
 from portico.core.config import (
     ALLOW_LOCAL_MCP_SERVERS,
     ENVIRONMENT,
@@ -25,7 +26,6 @@ from portico.core.config import (
     MOCK_EXTERNAL_APIS,
     TOOL_CACHE_TTL_SECONDS,
 )
-from portico.db.session import get_db_pool, get_memory_external_servers
 from portico.schemas.context import RequestContext
 from portico.schemas.server import ServerCreateRequest
 from portico.services.audit import log_tool_execution
@@ -35,19 +35,19 @@ from portico.services.crypto import (
     encrypt_auth_config,
 )
 from portico.services.url_validator import validate_mcp_url
+from portico.storage.factory import get_server_repository
 
 logger = logging.getLogger(__name__)
 
-# テナント別ツール一覧キャッシュ: {tenant_id: (timestamp, tools_list)}
-_TOOL_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
-
-def invalidate_tool_cache(tenant_id: str | None = None) -> None:
-    """ツールキャッシュを無効化する。tenant_id 未指定時は全パージ。"""
+async def invalidate_tool_cache(tenant_id: str | None = None) -> None:
+    """ツール・サーバー定義キャッシュを無効化する。tenant_id 未指定時は全パージ。"""
+    cache = get_cache_service()
     if tenant_id:
-        _TOOL_CACHE.pop(tenant_id, None)
+        await cache.delete(f"tools:{tenant_id}")
+        await cache.delete(f"servers:{tenant_id}")
     else:
-        _TOOL_CACHE.clear()
+        await cache.clear()
 
 
 def to_server_slug(name: str) -> str:
@@ -72,61 +72,39 @@ def _parse_scopes(raw: Any) -> list[str]:
 
 async def list_servers_for_tenant(tenant_id: str) -> list[dict[str, Any]]:
     """
-    テナントの MCP サーバー一覧 (外部登録) を取得する。
+    テナントの MCP サーバー一覧 (外部登録) を取得する (二段キャッシュ対応)。
     """
+    cache = get_cache_service()
+    cache_key = f"servers:{tenant_id}"
+    cached = await cache.get(cache_key)
+    if cached is not None and isinstance(cached, list):
+        return cached
+
+    repo = get_server_repository()
+    raw_servers = await repo.list_servers(tenant_id)
     servers = []
+    for r in raw_servers:
+        atype = r.get("auth_type", "none")
+        has_a = bool(r.get("encrypted_auth_config")) or atype != "none"
+        created_val = r.get("created_at")
+        updated_val = r.get("updated_at")
+        servers.append(
+            {
+                "id": r["id"],
+                "tenant_id": r["tenant_id"],
+                "name": r["name"],
+                "url": r["url"],
+                "status": r.get("status", "active"),
+                "auth_type": atype,
+                "has_auth": has_a,
+                "scopes": _parse_scopes(r.get("scopes")),
+                "is_builtin": False,
+                "created_at": created_val.isoformat() if hasattr(created_val, "isoformat") else str(created_val) if created_val else None,
+                "updated_at": updated_val.isoformat() if hasattr(updated_val, "isoformat") else str(updated_val) if updated_val else None,
+            }
+        )
 
-    pool = await get_db_pool()
-    if pool:
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute("SELECT set_config('app.current_tenant_id', $1, true);", tenant_id)
-                rows = await conn.fetch(
-                    """
-                    SELECT id, tenant_id, name, url, status, auth_type, encrypted_auth_config, scopes, created_at, updated_at
-                    FROM mcp.external_servers
-                    WHERE tenant_id = $1
-                    ORDER BY created_at ASC;
-                    """,
-                    tenant_id,
-                )
-                for r in rows:
-                    atype = r.get("auth_type", "none")
-                    has_a = bool(r.get("encrypted_auth_config")) or atype != "none"
-                    servers.append(
-                        {
-                            "id": r["id"],
-                            "tenant_id": r["tenant_id"],
-                            "name": r["name"],
-                            "url": r["url"],
-                            "status": r["status"],
-                            "auth_type": atype,
-                            "has_auth": has_a,
-                            "scopes": _parse_scopes(r.get("scopes")),
-                            "is_builtin": False,
-                            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
-                            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
-                        }
-                    )
-                return servers
-        except Exception as exc:
-            logger.warning("DB query failed in list_servers_for_tenant: %s", exc)
-
-    mem = get_memory_external_servers()
-    for s in mem.values():
-        if s.get("tenant_id") == tenant_id:
-            atype = s.get("auth_type", "none")
-            has_a = bool(s.get("encrypted_auth_config")) or atype != "none"
-            servers.append(
-                {
-                    **s,
-                    "auth_type": atype,
-                    "has_auth": has_a,
-                    "scopes": s.get("scopes", []),
-                    "is_builtin": False,
-                }
-            )
-
+    await cache.set(cache_key, servers)
     return servers
 
 
@@ -134,27 +112,14 @@ async def delete_all_servers_for_tenant(tenant_id: str) -> int:
     """
     テナント削除時に呼び出され、該当テナントの全外部 MCP サーバーを完全消去する。
     """
+    repo = get_server_repository()
+    servers = await repo.list_servers(tenant_id)
     deleted_count = 0
-    pool = await get_db_pool()
-    if pool:
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute("SELECT set_config('app.current_tenant_id', $1, true);", tenant_id)
-                res = await conn.execute(
-                    "DELETE FROM mcp.external_servers WHERE tenant_id = $1;",
-                    tenant_id,
-                )
-                if res.startswith("DELETE "):
-                    deleted_count = int(res.split(" ")[1])
-        except Exception as exc:
-            logger.warning("DB delete failed in delete_all_servers_for_tenant: %s", exc)
+    for s in servers:
+        if await repo.delete_server(tenant_id, s["id"]):
+            deleted_count += 1
 
-    mem = get_memory_external_servers()
-    to_delete = [sid for sid, s in mem.items() if s.get("tenant_id") == tenant_id]
-    for sid in to_delete:
-        del mem[sid]
-        deleted_count += 1
-
+    await invalidate_tool_cache(tenant_id)
     return deleted_count
 
 
@@ -218,94 +183,45 @@ async def add_external_server(data: ServerCreateRequest, tenant_id: str) -> dict
 
     status = "active" if probe_ok else "connected"
 
-    pool = await get_db_pool()
-    saved = None
-    if pool:
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute("SELECT set_config('app.current_tenant_id', $1, true);", tenant_id)
-                scopes_json = json.dumps(data.scopes)
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO mcp.external_servers (id, tenant_id, name, url, status, auth_type, encrypted_auth_config, scopes, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $9)
-                    ON CONFLICT (tenant_id, url)
-                    DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status, auth_type = EXCLUDED.auth_type,
-                                  encrypted_auth_config = EXCLUDED.encrypted_auth_config, scopes = EXCLUDED.scopes, updated_at = EXCLUDED.updated_at
-                    RETURNING id, tenant_id, name, url, status, auth_type, scopes, created_at, updated_at;
-                    """,
-                    server_id,
-                    tenant_id,
-                    data.name,
-                    data.url,
-                    status,
-                    data.auth_type,
-                    encrypted_auth,
-                    scopes_json,
-                    now,
-                )
-                if row:
-                    saved = {
-                        "id": row["id"],
-                        "tenant_id": row["tenant_id"],
-                        "name": row["name"],
-                        "url": row["url"],
-                        "status": row["status"],
-                        "auth_type": row.get("auth_type", data.auth_type),
-                        "has_auth": has_auth,
-                        "scopes": _parse_scopes(row.get("scopes")) if "scopes" in row else data.scopes,
-                        "is_builtin": False,
-                        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-                    }
-        except Exception as exc:
-            logger.warning("DB insert failed in add_external_server: %s", exc)
+    server_data = {
+        "id": server_id,
+        "tenant_id": tenant_id,
+        "name": data.name,
+        "url": data.url,
+        "status": status,
+        "auth_type": data.auth_type,
+        "encrypted_auth_config": encrypted_auth,
+        "scopes": data.scopes,
+        "created_at": now.isoformat(),
+        "updated_at": now.isoformat(),
+    }
 
-    if not saved:
-        saved = {
-            "id": server_id,
-            "tenant_id": tenant_id,
-            "name": data.name,
-            "url": data.url,
-            "status": status,
-            "auth_type": data.auth_type,
-            "has_auth": has_auth,
-            "scopes": data.scopes,
-            "encrypted_auth_config": encrypted_auth,
-            "is_builtin": False,
-            "created_at": now.isoformat(),
-        }
-        get_memory_external_servers()[server_id] = saved
+    repo = get_server_repository()
+    saved = await repo.create_server(tenant_id, server_data)
 
-    invalidate_tool_cache(tenant_id)
-    return saved
+    await invalidate_tool_cache(tenant_id)
+    return {
+        "id": saved["id"],
+        "tenant_id": tenant_id,
+        "name": saved["name"],
+        "url": saved["url"],
+        "status": saved["status"],
+        "auth_type": saved["auth_type"],
+        "has_auth": has_auth,
+        "scopes": _parse_scopes(saved.get("scopes")),
+        "is_builtin": False,
+        "created_at": saved.get("created_at"),
+    }
 
 
 async def remove_external_server(server_id: str, tenant_id: str) -> bool:
     """
     外部 MCP サーバーを削除する。
     """
-    deleted = False
-    pool = await get_db_pool()
-    if pool:
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute("SELECT set_config('app.current_tenant_id', $1, true);", tenant_id)
-                res = await conn.execute(
-                    "DELETE FROM mcp.external_servers WHERE id = $1 AND tenant_id = $2;",
-                    server_id,
-                    tenant_id,
-                )
-                deleted = res != "DELETE 0"
-        except Exception as exc:
-            logger.warning("DB delete failed in remove_external_server: %s", exc)
-
-    mem = get_memory_external_servers()
-    if not deleted and server_id in mem and mem[server_id].get("tenant_id") == tenant_id:
-        del mem[server_id]
-        deleted = True
-
+    repo = get_server_repository()
+    deleted = await repo.delete_server(tenant_id, server_id)
     if deleted:
-        invalidate_tool_cache(tenant_id)
+        await invalidate_tool_cache(tenant_id)
     return deleted
 
 
@@ -313,69 +229,41 @@ async def get_external_servers_with_auth(tenant_id: str) -> list[dict[str, Any]]
     """
     テナントの全外部 MCP サーバーの URL と復号された認証ヘッダー、スコープ、識別情報のリストを取得する。
     """
+    repo = get_server_repository()
+    raw_servers = await repo.list_servers(tenant_id)
     results = []
-    pool = await get_db_pool()
-    if pool:
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute("SELECT set_config('app.current_tenant_id', $1, true);", tenant_id)
-                rows = await conn.fetch(
-                    "SELECT id, url, encrypted_auth_config, name, scopes FROM mcp.external_servers WHERE tenant_id = $1;",
-                    tenant_id,
-                )
-                for r in rows:
-                    auth_cfg = decrypt_auth_config(r.get("encrypted_auth_config"))
-                    headers = auth_cfg.get("headers", {})
-                    s_name = r.get("name") or "External"
-                    results.append(
-                        {
-                            "id": r["id"],
-                            "url": r["url"],
-                            "headers": headers,
-                            "name": s_name,
-                            "slug": to_server_slug(s_name),
-                            "scopes": _parse_scopes(r.get("scopes")),
-                        }
-                    )
-                return results
-        except Exception as exc:
-            logger.warning("DB fetch failed in get_external_servers_with_auth: %s", exc)
-
-    mem = get_memory_external_servers()
-    for s in mem.values():
-        if s.get("tenant_id") == tenant_id:
-            auth_cfg = decrypt_auth_config(s.get("encrypted_auth_config"))
-            headers = auth_cfg.get("headers", {})
-            s_name = s.get("name") or "External"
-            results.append(
-                {
-                    "id": s.get("id"),
-                    "url": s["url"],
-                    "headers": headers,
-                    "name": s_name,
-                    "slug": to_server_slug(s_name),
-                    "scopes": s.get("scopes", []),
-                }
-            )
-
+    for r in raw_servers:
+        auth_cfg = decrypt_auth_config(r.get("encrypted_auth_config"))
+        headers = auth_cfg.get("headers", {})
+        s_name = r.get("name") or "External"
+        results.append(
+            {
+                "id": r["id"],
+                "url": r["url"],
+                "headers": headers,
+                "name": s_name,
+                "slug": to_server_slug(s_name),
+                "scopes": _parse_scopes(r.get("scopes")),
+            }
+        )
     return results
 
 
 async def get_aggregated_tools(tenant_id: str, force_refresh: bool = False) -> list[dict[str, Any]]:
     """
     外部 MCP サーバーからクロールした全ツールを統合して返却する。
-    TTL キャッシュが存在し有効期限内の場合はキャッシュを即座に返却。
-    キャッシュミス時は外部 MCP サーバー群へ並列非同期リクエストを送信する。
+    二段キャッシュ (L1: Memory + L2: Valkey) を活用してマイクロ秒応答。
     """
-    now = time.time()
-    if not force_refresh and tenant_id in _TOOL_CACHE:
-        cached_time, cached_tools = _TOOL_CACHE[tenant_id]
-        if now - cached_time < TOOL_CACHE_TTL_SECONDS:
-            return cached_tools
+    cache = get_cache_service()
+    cache_key = f"tools:{tenant_id}"
+    if not force_refresh:
+        cached = await cache.get(cache_key)
+        if cached is not None and isinstance(cached, list):
+            return cached
 
     servers = await get_external_servers_with_auth(tenant_id)
     if not servers:
-        _TOOL_CACHE[tenant_id] = (now, [])
+        await cache.set(cache_key, [], ttl=TOOL_CACHE_TTL_SECONDS)
         return []
 
     async def _fetch_from_single_server(s: dict[str, Any], client: httpx.AsyncClient) -> list[dict[str, Any]]:
@@ -435,17 +323,13 @@ async def get_aggregated_tools(tenant_id: str, force_refresh: bool = False) -> l
         if isinstance(res, list):
             all_tools.extend(res)
 
-    _TOOL_CACHE[tenant_id] = (now, all_tools)
+    await cache.set(cache_key, all_tools, ttl=TOOL_CACHE_TTL_SECONDS)
     return all_tools
 
 
 def check_scope_authorized(client_scopes: list[str] | None, required_scopes: list[str]) -> bool:
     """
     クライアントのスコープが必要スコープを満たしているか判定する。
-    - クライアントスコープが未指定 (None) の場合は全許可 (未制限アクセス)
-    - ツールが必要スコープを持たない (空リスト) 場合は全許可 (パブリックツール)
-    - クライアントが '*' または 'admin' を持つ場合は全許可
-    - それ以外は、要求スコープのいずれか (またはプレフィックス 'app:*') を持っていること
     """
     if client_scopes is None:
         return True
@@ -457,7 +341,6 @@ def check_scope_authorized(client_scopes: list[str] | None, required_scopes: lis
     for req in required_scopes:
         if req in client_scopes:
             return True
-        # プレフィックス一致 (例: 'notion:*' で 'notion:read' を許可)
         prefix = req.split(":")[0] + ":*" if ":" in req else None
         if prefix and prefix in client_scopes:
             return True
@@ -597,9 +480,6 @@ async def dispatch_tool_call(
         )
     except HTTPException as exc:
         err_detail = str(exc.detail)
-        raise
-    except Exception as exc:
-        err_detail = str(exc)
         raise
     finally:
         duration_ms = (time.perf_counter() - start_time) * 1000

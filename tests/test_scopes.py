@@ -9,13 +9,14 @@ from urllib.parse import urlparse
 
 import httpx
 import pytest
+from fastapi import HTTPException
 
-from portico.db.session import get_memory_external_servers
 from portico.services.server_service import (
     check_scope_authorized,
     dispatch_tool_call,
     get_aggregated_tools,
 )
+from portico.storage.factory import get_server_repository
 
 
 class TestScopeMatchingLogic:
@@ -47,22 +48,29 @@ class TestScopeEnforcementInRoutes:
     @pytest.mark.asyncio
     async def test_list_tools_filters_by_client_scopes(self):
         """X-Scopes が指定された場合、合致するツールのみ返却される。"""
-        # 外部サーバーを 2 件登録 (1件は notion:read, もう1件は secret:admin)
-        mem = get_memory_external_servers()
-        mem["srv-notion"] = {
-            "id": "srv-notion",
-            "tenant_id": "tenant_scopes_test",
-            "name": "Notion MCP",
-            "url": "https://notion.example.com",
-            "scopes": ["notion:read"],
-        }
-        mem["srv-secret"] = {
-            "id": "srv-secret",
-            "tenant_id": "tenant_scopes_test",
-            "name": "Secret Admin MCP",
-            "url": "https://secret.example.com",
-            "scopes": ["secret:admin"],
-        }
+        repo = get_server_repository()
+        await repo.create_server(
+            "tenant_scopes_test",
+            {
+                "id": "srv-notion",
+                "name": "Notion MCP",
+                "url": "https://notion.example.com",
+                "scopes": ["notion:read"],
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
+        await repo.create_server(
+            "tenant_scopes_test",
+            {
+                "id": "srv-secret",
+                "name": "Secret Admin MCP",
+                "url": "https://secret.example.com",
+                "scopes": ["secret:admin"],
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
 
         async def mock_post(url, **kwargs):
             body = kwargs.get("json", {})
@@ -93,16 +101,18 @@ class TestScopeEnforcementInRoutes:
     @pytest.mark.asyncio
     async def test_execute_tool_forbidden_when_scope_missing(self):
         """必要なスコープを持たないリクエストは 403 で拒絶される。"""
-        from fastapi import HTTPException
-
-        mem = get_memory_external_servers()
-        mem["srv-secret"] = {
-            "id": "srv-secret",
-            "tenant_id": "tenant_guard_test",
-            "name": "Secret MCP",
-            "url": "https://secret.example.com",
-            "scopes": ["infra:destroy"],
-        }
+        repo = get_server_repository()
+        await repo.create_server(
+            "tenant_guard_test",
+            {
+                "id": "srv-secret",
+                "name": "Secret MCP",
+                "url": "https://secret.example.com",
+                "scopes": ["infra:destroy"],
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
 
         mock_post_resp = httpx.Response(200, json={"jsonrpc": "2.0", "result": {"tools": [{"name": "infra_destroy", "scopes": ["infra:destroy"]}]}})
         with patch("httpx.AsyncClient.post", return_value=mock_post_resp):
@@ -120,14 +130,18 @@ class TestScopeEnforcementInRoutes:
     @pytest.mark.asyncio
     async def test_execute_tool_success_when_scope_matches(self):
         """必要なスコープを満たしている場合、正常に実行 (プロキシ転送) される。"""
-        mem = get_memory_external_servers()
-        mem["srv-secret"] = {
-            "id": "srv-secret",
-            "tenant_id": "tenant_guard_test",
-            "name": "Secret MCP",
-            "url": "https://secret.example.com",
-            "scopes": ["infra:destroy"],
-        }
+        repo = get_server_repository()
+        await repo.create_server(
+            "tenant_guard_test",
+            {
+                "id": "srv-secret",
+                "name": "Secret MCP",
+                "url": "https://secret.example.com",
+                "scopes": ["infra:destroy"],
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
 
         async def mock_post(url, **kwargs):
             body = kwargs.get("json", {})
