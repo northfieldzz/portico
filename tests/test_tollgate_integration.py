@@ -29,8 +29,9 @@ def mock_context_app():
     return test_app
 
 
-def test_standalone_no_headers(mock_context_app):
-    """ヘッダーなし直接呼び出し時はデフォルトテナントで動作すること"""
+def test_standalone_no_headers_insecure_mode(mock_context_app, monkeypatch):
+    """INSECURE_NO_GATEWAY_AUTH=True (開発モード) 時はシークレットなしで動作すること"""
+    monkeypatch.setattr("portico.api.deps.INSECURE_NO_GATEWAY_AUTH", True)
     client = TestClient(mock_context_app)
     res = client.get("/test/context")
     assert res.status_code == 200
@@ -38,28 +39,23 @@ def test_standalone_no_headers(mock_context_app):
     assert data["tenant_id"] == "tenant_default"
     assert data["is_proxied"] is False
     assert data["key_id"] is None
-    assert data["key_prefix"] is None
-    assert data["service_id"] is None
 
     res_tenant = client.get("/test/tenant")
     assert res_tenant.status_code == 200
     assert res_tenant.json()["tenant_id"] == "tenant_default"
 
 
-def test_standalone_query_tenant(mock_context_app):
-    """ヘッダーなし・クエリパラメータ指定時は指定テナントが使われること"""
-    client = TestClient(mock_context_app)
-    res = client.get("/test/context?tenant_id=custom_tenant")
-    assert res.status_code == 200
-    data = res.json()
-    assert data["tenant_id"] == "custom_tenant"
-    assert data["is_proxied"] is False
+def test_gateway_secret_all_headers(mock_context_app, monkeypatch):
+    """Tollgate / Proxy から X-Gateway-Secret と全連携ヘッダーが付与された場合に認証成功すること"""
+    monkeypatch.setattr("portico.api.deps.INSECURE_NO_GATEWAY_AUTH", False)
+    monkeypatch.setattr(
+        "portico.api.deps.get_valid_gateway_secrets",
+        lambda: ["gw-secret-32-chars-long-abcdef0123456789"],
+    )
 
-
-def test_tollgate_headers_all(mock_context_app):
-    """Tollgate からの全連携ヘッダーが付与された場合にコンテキストへ正しく反映されること"""
     client = TestClient(mock_context_app)
     headers = {
+        "X-Gateway-Secret": "gw-secret-32-chars-long-abcdef0123456789",
         "X-Tenant-ID": "tenant_corp_abc123",
         "X-Key-ID": "550e8400-e29b-41d4-a716-446655440000",
         "X-Key-Prefix": "tlge-live-8f9c",
@@ -74,56 +70,71 @@ def test_tollgate_headers_all(mock_context_app):
     assert data["service_id"] == "svc-mcp-cluster-1"
     assert data["is_proxied"] is True
 
-    res_tenant = client.get("/test/tenant", headers=headers)
-    assert res_tenant.json()["tenant_id"] == "tenant_corp_abc123"
 
+def test_gateway_secret_rotation(mock_context_app, monkeypatch):
+    """新旧 Gateway 共有シークレット（ローテーション対応）のいずれでも認証が通過すること"""
+    monkeypatch.setattr("portico.api.deps.INSECURE_NO_GATEWAY_AUTH", False)
+    monkeypatch.setattr(
+        "portico.api.deps.get_valid_gateway_secrets",
+        lambda: ["primary-secret-32-chars-0000000000", "previous-secret-32-chars-11111111"],
+    )
 
-def test_tollgate_headers_without_service_id(mock_context_app):
-    """X-Service-ID がない場合でも必須ヘッダーがあればプロキシ認証扱いとなること"""
-    client = TestClient(mock_context_app)
-    headers = {
-        "X-Tenant-ID": "tenant_xyz",
-        "X-Key-ID": "key-12345",
-        "X-Key-Prefix": "tlge-test-1111",
-    }
-    res = client.get("/test/context", headers=headers)
-    assert res.status_code == 200
-    data = res.json()
-    assert data["tenant_id"] == "tenant_xyz"
-    assert data["key_id"] == "key-12345"
-    assert data["key_prefix"] == "tlge-test-1111"
-    assert data["service_id"] is None
-    assert data["is_proxied"] is True
-
-
-def test_enforce_tollgate_auth_enabled(mock_context_app, monkeypatch):
-    """ENFORCE_TOLLGATE_AUTH=True 時はヘッダー欠落リクエストが 401 で拒絶されること"""
-    monkeypatch.setattr("portico.api.deps.ENFORCE_TOLLGATE_AUTH", True)
     client = TestClient(mock_context_app)
 
-    # ヘッダーなし -> 401
-    res = client.get("/test/context")
-    assert res.status_code == 401
-    assert "Tollgate authentication required" in res.json()["detail"]
+    # 1. 新シークレット (Primary) での認証成功
+    res_primary = client.get(
+        "/test/context",
+        headers={"X-Gateway-Secret": "primary-secret-32-chars-0000000000"},
+    )
+    assert res_primary.status_code == 200
 
-    # X-Tenant-ID のみ -> 401 (X-Key-ID 欠落)
-    res = client.get("/test/context", headers={"X-Tenant-ID": "t1"})
-    assert res.status_code == 401
+    # 2. 旧シークレット (Previous) での認証成功 (ローテーション移行期間)
+    res_previous = client.get(
+        "/test/context",
+        headers={"X-Gateway-Secret": "previous-secret-32-chars-11111111"},
+    )
+    assert res_previous.status_code == 200
 
-    # 両方あり -> 200 OK
-    res = client.get("/test/context", headers={"X-Tenant-ID": "t1", "X-Key-ID": "k1"})
-    assert res.status_code == 200
-    assert res.json()["tenant_id"] == "t1"
+    # 3. 不正シークレットでの認証失敗 (401)
+    res_invalid = client.get(
+        "/test/context",
+        headers={"X-Gateway-Secret": "invalid-secret"},
+    )
+    assert res_invalid.status_code == 401
+    assert "Missing or invalid gateway shared secret" in res_invalid.json()["detail"]
+
+    # 4. シークレット欠落での認証失敗 (401)
+    res_missing = client.get("/test/context")
+    assert res_missing.status_code == 401
 
 
-def test_main_app_tools_endpoint_with_tollgate_headers():
-    """実アプリケーションエンドポイント (/v1/tools) への Tollgate ヘッダー透過動作確認"""
+def test_tenant_id_conflict_fail_fast(mock_context_app, monkeypatch):
+    """X-Tenant-ID ヘッダーと query tenant_id が不一致の場合は 403 で Fail-Fast すること"""
+    monkeypatch.setattr("portico.api.deps.INSECURE_NO_GATEWAY_AUTH", True)
+    client = TestClient(mock_context_app)
+    headers = {"X-Tenant-ID": "tenant_from_header"}
+    res = client.get("/test/context?tenant_id=tenant_from_query", headers=headers)
+    assert res.status_code == 403
+    assert "Tenant ID conflict" in res.json()["detail"]
+
+
+def test_main_app_servers_endpoint_with_gateway_secret(monkeypatch):
+    """実アプリケーションエンドポイント (/v1/servers) への X-Gateway-Secret 連携動作確認"""
+    monkeypatch.setattr("portico.api.deps.INSECURE_NO_GATEWAY_AUTH", False)
+    monkeypatch.setattr(
+        "portico.api.deps.get_valid_gateway_secrets",
+        lambda: ["gw-secret-32-chars-long-abcdef0123456789"],
+    )
     client = TestClient(app)
     headers = {
+        "X-Gateway-Secret": "gw-secret-32-chars-long-abcdef0123456789",
         "X-Tenant-ID": "tenant_live_demo",
         "X-Key-ID": "key-uuid-9999",
         "X-Key-Prefix": "tlge-live-demo",
     }
-    res = client.get("/v1/tools", headers=headers)
+    res = client.get("/v1/servers", headers=headers)
     assert res.status_code == 200
     assert isinstance(res.json(), list)
+
+
+

@@ -27,9 +27,45 @@ MAX_SERVERS_PER_TENANT = int(os.getenv("MAX_SERVERS_PER_TENANT", "50"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", secrets.token_hex(32))
 
-# Tollgate リバースプロキシ連携設定
-ENFORCE_TOLLGATE_AUTH = os.getenv("ENFORCE_TOLLGATE_AUTH", "false").lower() in ("true", "1", "yes")
+# ── Gateway 共有シークレット認証設定 (Kura 準拠) ─────────────────────────
+# 認証ゲートウェイ (Tollgate / Proxy 等) からのアクセスを相互信頼確認する共有シークレット
+GATEWAY_SHARED_SECRET = os.getenv("GATEWAY_SHARED_SECRET")
+GATEWAY_SHARED_SECRET_PREVIOUS = os.getenv("GATEWAY_SHARED_SECRET_PREVIOUS")
+GATEWAY_SECRET_HEADER = os.getenv("GATEWAY_SECRET_HEADER", "X-Gateway-Secret")
+INSECURE_NO_GATEWAY_AUTH = os.getenv("INSECURE_NO_GATEWAY_AUTH", "false").lower() in ("true", "1", "yes")
 DEFAULT_TENANT_ID = os.getenv("DEFAULT_TENANT_ID", "tenant_default")
+
+
+def get_valid_gateway_secrets() -> list[str]:
+    """現在有効な Gateway 共有シークレット一覧（新旧ローテーション対応）を返す。"""
+    secrets_list: list[str] = []
+    if GATEWAY_SHARED_SECRET and GATEWAY_SHARED_SECRET.strip():
+        secrets_list.append(GATEWAY_SHARED_SECRET.strip())
+    if GATEWAY_SHARED_SECRET_PREVIOUS and GATEWAY_SHARED_SECRET_PREVIOUS.strip():
+        secrets_list.append(GATEWAY_SHARED_SECRET_PREVIOUS.strip())
+    return secrets_list
+
+
+def validate_gateway_auth_config() -> None:
+    """
+    起動時に Gateway 共有シークレット設定を検証する (Fail-Fast)。
+    INSECURE_NO_GATEWAY_AUTH=false かつシークレット未設定の場合は起動を拒否する。
+    """
+    if INSECURE_NO_GATEWAY_AUTH:
+        return
+
+    valid_secrets = get_valid_gateway_secrets()
+    if not valid_secrets:
+        if ENVIRONMENT == "production":
+            raise RuntimeError(
+                "GATEWAY_SHARED_SECRET must be set in production (or enable INSECURE_NO_GATEWAY_AUTH=true for local dev)"
+            )
+    else:
+        for s in valid_secrets:
+            if len(s) < 32 and ENVIRONMENT == "production":
+                raise RuntimeError("GATEWAY_SHARED_SECRET must be at least 32 characters long in production")
+
+
 
 # 外部 MCP サーバー連携・キャッシュ設定
 TOOL_CACHE_TTL_SECONDS = int(os.getenv("TOOL_CACHE_TTL_SECONDS", "60"))

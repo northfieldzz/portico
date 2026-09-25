@@ -25,9 +25,17 @@ gateway_mcp = FastMCP("IT Context MCP Gateway")
 def get_current_mcp_context() -> tuple[str, list[str] | None, RequestContext]:
     """
     SSE 接続またはリクエストのコンテキストからテナント ID、スコープ、認証コンテキストを解決する。
-    HTTP ヘッダー (X-Tenant-ID / X-Key-ID / X-Scopes 等) およびクエリパラメータに対応。
+    HTTP ヘッダー (X-Gateway-Secret / Authorization / X-Tenant-ID / X-Key-ID / X-Scopes 等) に対応。
     """
-    tenant_id = "default"
+    from fastapi import HTTPException, status
+    from portico.api.deps import verify_gateway_secret
+    from portico.core.config import (
+        DEFAULT_TENANT_ID,
+        GATEWAY_SECRET_HEADER,
+        INSECURE_NO_GATEWAY_AUTH,
+    )
+
+    tenant_id = DEFAULT_TENANT_ID
     scopes: list[str] | None = None
     key_id: str | None = None
     key_prefix: str | None = None
@@ -37,30 +45,50 @@ def get_current_mcp_context() -> tuple[str, list[str] | None, RequestContext]:
         ctx = request_ctx.get()
         req = getattr(ctx, "request", None)
         if req is not None:
-            # テナント ID の解決
+            # 認証ヘッダーの取得
+            gw_secret = req.headers.get("x-gateway-secret") or req.headers.get("authorization")
             h_tenant = req.headers.get("x-tenant-id")
+            q_tenant = req.query_params.get("tenant_id")
+
+            # テナントコンフリクトの検証 (Fail-Fast)
+            if h_tenant and q_tenant and h_tenant.strip() != q_tenant.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tenant ID conflict: Header X-Tenant-ID does not match query tenant_id",
+                )
+
+            # テナント ID の解決
             if h_tenant:
-                tenant_id = h_tenant
-            else:
-                q_tenant = req.query_params.get("tenant_id")
-                if q_tenant:
-                    tenant_id = q_tenant
+                tenant_id = h_tenant.strip()
+            elif q_tenant:
+                tenant_id = q_tenant.strip()
 
             # Tollgate キー情報
             key_id = req.headers.get("x-key-id")
             key_prefix = req.headers.get("x-key-prefix")
             service_id = req.headers.get("x-service-id")
 
+            # Gateway 共有シークレット検証
+            if not INSECURE_NO_GATEWAY_AUTH:
+                if not verify_gateway_secret(gw_secret):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail=f"Unauthorized: Missing or invalid gateway shared secret ({GATEWAY_SECRET_HEADER})",
+                    )
+
             # スコープの解決
             h_scopes = req.headers.get("x-scopes")
+
             if h_scopes:
                 scopes = [s.strip() for s in h_scopes.split(",") if s.strip()]
             else:
                 q_scopes = req.query_params.get("scopes")
                 if q_scopes:
                     scopes = [s.strip() for s in q_scopes.split(",") if s.strip()]
-    except Exception:
-        pass
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.debug("MCP context extraction error: %s", exc)
 
     context = RequestContext(
         tenant_id=tenant_id,

@@ -8,10 +8,13 @@ from unittest.mock import patch
 from urllib.parse import urlparse
 
 import httpx
-from fastapi.testclient import TestClient
-
-from portico.api.routes.tools import check_scope_authorized
+import pytest
 from portico.db.session import get_memory_external_servers
+from portico.services.server_service import (
+    check_scope_authorized,
+    dispatch_tool_call,
+    get_aggregated_tools,
+)
 
 
 class TestScopeMatchingLogic:
@@ -38,10 +41,11 @@ class TestScopeMatchingLogic:
 
 
 class TestScopeEnforcementInRoutes:
-    """FastAPI エンドポイントにおける X-Scopes ヘッダーの制御テスト。"""
+    """ツール集約・ディスパッチにおける X-Scopes の制御テスト。"""
 
-    def test_list_tools_filters_by_client_scopes(self, client: TestClient):
-        """X-Scopes ヘッダーが指定された場合、合致するツールのみ返却される。"""
+    @pytest.mark.asyncio
+    async def test_list_tools_filters_by_client_scopes(self):
+        """X-Scopes が指定された場合、合致するツールのみ返却される。"""
         # 外部サーバーを 2 件登録 (1件は notion:read, もう1件は secret:admin)
         mem = get_memory_external_servers()
         mem["srv-notion"] = {
@@ -71,26 +75,25 @@ class TestScopeEnforcementInRoutes:
 
         with patch("httpx.AsyncClient.post", side_effect=mock_post):
             # 1. スコープ未指定 -> 全ツール取得 (名前空間プレフィックス付き)
-            res_all = client.get("/v1/tools", headers={"X-Tenant-ID": "tenant_scopes_test"})
-            assert res_all.status_code == 200
-            names_all = [t["name"] for t in res_all.json()]
-            orig_names = [t.get("original_name") for t in res_all.json()]
+            tools_all = await get_aggregated_tools("tenant_scopes_test")
+            names_all = [t["name"] for t in tools_all]
+            orig_names = [t.get("original_name") for t in tools_all]
             assert "notion_mcp__notion_search" in names_all
             assert "secret_admin_mcp__secret_wipe" in names_all
             assert "notion_search" in orig_names
 
             # 2. X-Scopes: notion:read -> notion_search のみ取得 (secret_wipe は除外)
-            res_notion = client.get(
-                "/v1/tools",
-                headers={"X-Tenant-ID": "tenant_scopes_test", "X-Scopes": "notion:read"},
-            )
-            assert res_notion.status_code == 200
-            names_notion = [t["name"] for t in res_notion.json()]
+            scopes_notion = ["notion:read"]
+            filtered_tools = [t for t in tools_all if check_scope_authorized(scopes_notion, t.get("scopes", []))]
+            names_notion = [t["name"] for t in filtered_tools]
             assert "notion_mcp__notion_search" in names_notion
             assert "secret_admin_mcp__secret_wipe" not in names_notion
 
-    def test_execute_tool_forbidden_when_scope_missing(self, client: TestClient):
+    @pytest.mark.asyncio
+    async def test_execute_tool_forbidden_when_scope_missing(self):
         """必要なスコープを持たないリクエストは 403 で拒絶される。"""
+        from fastapi import HTTPException
+
         mem = get_memory_external_servers()
         mem["srv-secret"] = {
             "id": "srv-secret",
@@ -102,16 +105,19 @@ class TestScopeEnforcementInRoutes:
 
         mock_post_resp = httpx.Response(200, json={"jsonrpc": "2.0", "result": {"tools": [{"name": "infra_destroy", "scopes": ["infra:destroy"]}]}})
         with patch("httpx.AsyncClient.post", return_value=mock_post_resp):
-            # 不足スコープ (X-Scopes: tools:read) で呼び出し -> 403 Forbidden
-            res = client.post(
-                "/v1/tools/infra_destroy",
-                headers={"X-Tenant-ID": "tenant_guard_test", "X-Scopes": "tools:read"},
-                json={"target": "prod-db"},
-            )
-            assert res.status_code == 403
-            assert "Insufficient scope" in res.json()["detail"]
+            # 不足スコープ (scopes: tools:read) で呼び出し -> 403 Forbidden
+            with pytest.raises(HTTPException) as exc_info:
+                await dispatch_tool_call(
+                    "infra_destroy",
+                    {"target": "prod-db"},
+                    tenant_id="tenant_guard_test",
+                    scopes=["tools:read"],
+                )
+            assert exc_info.value.status_code == 403
+            assert "Insufficient scope" in exc_info.value.detail
 
-    def test_execute_tool_success_when_scope_matches(self, client: TestClient):
+    @pytest.mark.asyncio
+    async def test_execute_tool_success_when_scope_matches(self):
         """必要なスコープを満たしている場合、正常に実行 (プロキシ転送) される。"""
         mem = get_memory_external_servers()
         mem["srv-secret"] = {
@@ -138,11 +144,12 @@ class TestScopeEnforcementInRoutes:
             return httpx.Response(404)
 
         with patch("httpx.AsyncClient.post", side_effect=mock_post):
-            # 合致スコープ (X-Scopes: infra:destroy) で呼び出し -> 200 OK
-            res = client.post(
-                "/v1/tools/infra_destroy",
-                headers={"X-Tenant-ID": "tenant_guard_test", "X-Scopes": "infra:destroy"},
-                json={"target": "test-sandbox"},
+            # 合致スコープ (scopes: infra:destroy) で呼び出し -> 正常完了
+            res = await dispatch_tool_call(
+                "infra_destroy",
+                {"target": "test-sandbox"},
+                tenant_id="tenant_guard_test",
+                scopes=["infra:destroy"],
             )
-            assert res.status_code == 200
-            assert res.json()["result"]["destroyed"] is True
+            assert res["destroyed"] is True
+
