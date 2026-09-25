@@ -83,4 +83,10 @@ def validate_mcp_url(url: str, allow_local: bool = False) -> None:
             if ip.is_multicast or ip.is_reserved:
                 raise SSRFValidationError(f"Access to reserved/multicast IP '{ip_str}' is forbidden (SSRF)")
 
+            # SECURITY: is_private evaluates to False for CGNAT (100.64.0.0/10) and other non-global ranges.
+            # We must explicitly check if the IP is NOT global to prevent SSRF bypass.
+            # This acts as a catch-all after specific error messages are handled above.
+            if getattr(ip, "is_global", None) is False:
+                raise SSRFValidationError(f"Access to non-global IP '{ip_str}' is forbidden (SSRF)")
+
     logger.debug("✅ MCP URL '%s' passed SSRF validation", url)

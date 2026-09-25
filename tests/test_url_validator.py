@@ -74,6 +74,15 @@ class TestSSRFValidator:
                 with pytest.raises(SSRFValidationError, match="private network IP"):
                     validate_mcp_url("http://internal.service.local/api", allow_local=False)
 
+    def test_cgnat_and_non_global_ips_blocked_by_default(self):
+        """allow_local=False の場合、CGNAT (100.64.x.x) やその他の非グローバル IP も遮断される。"""
+        non_global_ips = ["100.64.0.1", "100.127.255.254"]
+        for ip in non_global_ips:
+            with patch("socket.getaddrinfo") as mock_dns:
+                mock_dns.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 80))]
+                with pytest.raises(SSRFValidationError, match="non-global IP"):
+                    validate_mcp_url(f"http://{ip}/api", allow_local=False)
+
     def test_allow_local_flag_permits_private_and_loopback(self):
         """allow_local=True の場合、開発用に localhost やプライベート IP への接続が許可される。"""
         with patch("socket.getaddrinfo") as mock_dns:
