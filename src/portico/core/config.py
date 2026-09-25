@@ -57,14 +57,11 @@ def validate_gateway_auth_config() -> None:
     valid_secrets = get_valid_gateway_secrets()
     if not valid_secrets:
         if ENVIRONMENT == "production":
-            raise RuntimeError(
-                "GATEWAY_SHARED_SECRET must be set in production (or enable INSECURE_NO_GATEWAY_AUTH=true for local dev)"
-            )
+            raise RuntimeError("GATEWAY_SHARED_SECRET must be set in production (or enable INSECURE_NO_GATEWAY_AUTH=true for local dev)")
     else:
         for s in valid_secrets:
             if len(s) < 32 and ENVIRONMENT == "production":
                 raise RuntimeError("GATEWAY_SHARED_SECRET must be at least 32 characters long in production")
-
 
 
 # 外部 MCP サーバー連携・キャッシュ設定

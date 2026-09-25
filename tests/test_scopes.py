@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 import httpx
 import pytest
+
 from portico.db.session import get_memory_external_servers
 from portico.services.server_service import (
     check_scope_authorized,
@@ -152,4 +153,3 @@ class TestScopeEnforcementInRoutes:
                 scopes=["infra:destroy"],
             )
             assert res["destroyed"] is True
-

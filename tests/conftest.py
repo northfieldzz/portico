@@ -48,7 +48,6 @@ def mock_db_pool_none():
         yield
 
 
-
 @pytest.fixture
 def client() -> TestClient:
     """FastAPI 同期テストクライアント。"""

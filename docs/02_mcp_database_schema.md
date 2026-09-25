@@ -1,17 +1,26 @@
-# MCP Gateway — PostgreSQL `mcp` スキーマ & 永続化仕様書
+# Portico — PostgreSQL `mcp` スキーマ & 永続化仕様書
 
-本ドキュメントは、MCP Gateway が独自に保持・管理する PostgreSQL 独立スキーマ `mcp`、テーブル構造、Row Level Security (RLS) によるテナント分離、およびインメモリフォールバック動作について定義する。
+本ドキュメントは、Portico（MCP Gateway）が独自に保持・管理する PostgreSQL 独立スキーマ `mcp`、テーブル構造、Row Level Security (RLS) によるテナント分離、およびインメモリフォールバック動作について定義する。
+
+---
+
+## 目次
+
+- [1. 独立スキーマ mcp の設計方針](#1-独立スキーマ-mcp-の設計方針)
+- [2. テーブル定義 (mcp.external_servers)](#2-テーブル定義-mcpexternal_servers)
+- [3. テナント分離 (Row Level Security: RLS)](#3-テナント分離-row-level-security-rls)
+- [4. インメモリフォールバック動作 (Resilience)](#4-インメモリフォールバック動作-resilience)
 
 ---
 
 ## 1. 独立スキーマ `mcp` の設計方針
 
-MCP Gateway はマイクロサービスとしての自律性を担保するため、AI Engine のテーブル群とは切り離された **`mcp` スキーマ** を自己管理する。
+MCP Gateway はマイクロサービスとしての自律性を担保するため、AI Engine や他サービスのテーブル群とは切り離された **`mcp` スキーマ** を自己管理する。
 
 - **スキーマの自己初期化 (`db/session.py`)**:
   - アプリケーション起動時に `init_mcp_db()` が自動実行され、スキーマおよびテーブルが存在しない場合は `CREATE SCHEMA IF NOT EXISTS mcp` により自動構築される。
 - **分離のメリット**:
-  - 本番 AWS 環境において、将来的に MCP Gateway 専用の独立した RDS / Aurora インスタンスへ物理分離することが容易。
+  - 本番環境において、将来的に MCP Gateway 専用の独立した RDS / Aurora インスタンスへ物理分離することが容易。
 
 ---
 
@@ -86,4 +95,5 @@ flowchart TD
     CHECK -- Yes --> PG["PostgreSQL (mcp.external_servers) への永続化"]
     CHECK -- No / 例外 --> MEM["インメモリ辞書 (_memory_external_servers) への一時保存<br/>⚠️ 警告ログを出力しフォールバック稼働"]
 ```
+
 これにより、開発中の DB 再起動時や障害発生時でも、API がクラッシュすることなく安全に縮退稼働する。

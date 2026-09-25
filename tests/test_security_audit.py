@@ -8,10 +8,8 @@ import logging
 from unittest.mock import patch
 
 import pytest
-from fastapi.testclient import TestClient
 
 from portico.core.config import validate_gateway_auth_config
-from portico.main import app
 from portico.schemas.context import RequestContext
 from portico.services.audit import log_tool_execution
 from portico.services.crypto import validate_crypto_config
@@ -60,7 +58,6 @@ def test_development_without_secret_key_logs_warning(caplog):
         assert "Using default fallback key for development" in caplog.text
 
 
-
 def test_audit_logging_structure(caplog):
     """log_tool_execution で期待通りの構造化ログが出力されること"""
     ctx = RequestContext(
@@ -91,6 +88,7 @@ def test_audit_logging_structure(caplog):
 async def test_audit_log_emitted_during_tool_execution(caplog):
     """ツール実行時に監査ログが正しく出力されること"""
     from fastapi import HTTPException
+
     from portico.services.server_service import dispatch_tool_call
 
     ctx = RequestContext(
@@ -111,4 +109,3 @@ async def test_audit_log_emitted_during_tool_execution(caplog):
         assert "AUDIT_EVENT:" in caplog.text
         assert "tenant_live_audit" in caplog.text
         assert "key-test-9999" in caplog.text
-

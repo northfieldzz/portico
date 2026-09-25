@@ -26,4 +26,3 @@ gateway_router.include_router(internal_router)
 v1_router = APIRouter(prefix="/v1")
 v1_router.include_router(servers.router)
 gateway_router.include_router(v1_router)
-

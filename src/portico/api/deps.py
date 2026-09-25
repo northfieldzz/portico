@@ -66,12 +66,11 @@ def get_request_context(
 
     # 2. Gateway 共有シークレットの検証 (Kura 準拠)
     secret_candidate = x_gateway_secret or authorization
-    if not INSECURE_NO_GATEWAY_AUTH:
-        if not verify_gateway_secret(secret_candidate):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Unauthorized: Missing or invalid gateway shared secret ({GATEWAY_SECRET_HEADER})",
-            )
+    if not INSECURE_NO_GATEWAY_AUTH and not verify_gateway_secret(secret_candidate):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Unauthorized: Missing or invalid gateway shared secret ({GATEWAY_SECRET_HEADER})",
+        )
 
     resolved_tenant = (x_tenant_id or tenant_id or DEFAULT_TENANT_ID).strip()
     is_proxied = bool(x_tenant_id and x_key_id)
@@ -83,8 +82,6 @@ def get_request_context(
         service_id=x_service_id,
         is_proxied=is_proxied,
     )
-
-
 
 
 def get_tenant_id(

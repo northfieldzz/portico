@@ -171,6 +171,7 @@ class TestToolDispatchService:
     async def test_execute_unknown_tool_returns_404(self):
         """未登録のツール呼び出しは HTTPException(404) となる。"""
         from fastapi import HTTPException
+
         from portico.services.server_service import dispatch_tool_call
 
         with pytest.raises(HTTPException) as exc_info:
@@ -259,4 +260,3 @@ class TestToolDispatchService:
             call_json = mock_post.call_args[1].get("json", {})
             assert call_json.get("method") == "tools/call"
             assert call_json.get("params", {}).get("name") == "deploy"
-

@@ -4,10 +4,33 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-009688.svg)](https://fastapi.tiangolo.com/)
 [![FastMCP](https://img.shields.io/badge/FastMCP-3.2+-green.svg)](https://github.com/PrefectHQ/fastmcp)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791.svg)](https://www.postgresql.org/)
+[![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-E6522C.svg?logo=prometheus)](https://prometheus.io/)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-6BA539.svg?logo=openapiinitiative)](https://spec.openapis.org/oas/v3.1.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Portico** は、Model Context Protocol (MCP) をベースとしたエンタープライズ向け実行ゲートウェイ・統合ハブである。  
-AI Engine や MCP クライアント（Claude Desktop, Cursor 等）か�## 主な機能
+**Portico** は、Model Context Protocol (MCP) をベースとしたマルチテナント向け実行ゲートウェイ・統合ハブである。  
+AI Engine や MCP クライアント（Claude Desktop, Cursor, LangGraph 等）と外部ツール（SaaS、顧客・テナント独自の外部カスタム MCP サーバー等）を安全に仲介し、動的ルーティング・プロキシ実行・監査ログ記録を行う。
+
+前段に [**Tollgate**](https://github.com/northfieldzz/tollgate)（APIキー管理・レート制限プロキシ）を配置し、`X-Gateway-Secret` によるゲートウェイ共有シークレット認証で連携することを前提としている（姉妹プロジェクト [**Kura**](https://github.com/northfieldzz/kura) と同様の信頼モデルを採用）。
+
+---
+
+## 目次
+
+- [主な機能](#主な機能)
+- [アーキテクチャ](#アーキテクチャ)
+- [ディレクトリ構成](#ディレクトリ構成)
+- [API エンドポイント一覧](#api-エンドポイント一覧)
+- [環境変数設定](#環境変数設定)
+- [クイックスタート](#クイックスタート)
+- [API & MCP 利用例](#api--mcp-利用例)
+- [テスト実行](#テスト実行)
+- [詳細仕様書 & ガイド](#詳細仕様書--ガイド)
+- [ライセンス](#ライセンス)
+
+---
+
+## 主な機能
 
 - **MCP 標準準拠 (SSE ストリーミング)**:
   - `/v1/sse` にて Model Context Protocol (MCP) 標準に準拠した Server-Sent Events ストリーミングを提供。
@@ -18,7 +41,7 @@ AI Engine や MCP クライアント（Claude Desktop, Cursor 等）か�## 主�
 - **堅牢なマルチテナント & データ分離**:
   - PostgreSQL 独立スキーマ `mcp` および Row Level Security (RLS) によるテナント間データ分離。
   - DB 未接続時はインメモリストアへ自動フォールバック。
-- **セキュリティ & ガバナンス (Kura 準拠)**:
+- **セキュリティ & ガバナンス (Kura / Tollgate 準拠)**:
   - **Gateway 共有シークレット認証**: 前段ゲートウェイ（Tollgate 等）からのアクセスを `X-Gateway-Secret` の定数時間比較で相互信頼確認。
   - **無停止シークレットローテーション**: `GATEWAY_SHARED_SECRET_PREVIOUS` による新旧シークレットの並行受付。
   - **Fail-Fast な整合性検証**: クライアント指定テナントとプロキシ指定 `X-Tenant-ID` の不一致（コンフリクト）時は `403 Forbidden` で即座に遮断。
@@ -119,10 +142,15 @@ portico/
 
 ## API エンドポイント一覧
 
+> [!IMPORTANT]
+> **認証モデル (Kura / Tollgate 準拠)**:
+> - **本番運用 (Gateway-Backed)**: 前段の Tollgate 等がエンドユーザーの API キー（`Authorization: Bearer <key>`）を認証・レート制限し、Portico へは共有シークレット `X-Gateway-Secret` およびテナントヘッダー（`X-Tenant-ID`, `X-Key-ID` 等）を付与して中継します。
+> - **ローカル開発 / スタンドアロン**: `INSECURE_NO_GATEWAY_AUTH=true` を設定することで、シークレット検証をバイパスして直接リクエスト可能です。
+
 ### 1. MCP SSE ストリーミング (`/v1/sse`)
 | メソッド | パス | 説明 | 認証・要件 |
 |:---|:---|:---|:---|
-| `GET` | `/v1/sse` | Model Context Protocol 準拠の SSE 接続エンドポイント（ツール一覧取得・ツール実行） | `X-Gateway-Secret` |
+| `GET` | `/v1/sse` | Model Context Protocol 準拠の SSE 接続エンドポイント（ツール探索・実行） | `X-Gateway-Secret` |
 | `POST` | `/v1/messages` | MCP SSE セッション向け JSON-RPC メッセージ送信 | アクティブセッション |
 
 ### 2. 外部 MCP サーバー管理 (`/v1/servers`)
@@ -133,9 +161,6 @@ portico/
 | `DELETE` | `/v1/servers/{server_id}` | 外部 MCP サーバーの登録解除 | `X-Gateway-Secret` |
 
 ### 3. 内部サービス専用 API (`/v1/internal`)
-> [!IMPORTANT]
-> `/v1/internal/*` 配下のエンドポイントは内部通信用共有シークレット（`X-Internal-Secret`）による認証が必須です。
-
 | メソッド | パス | 説明 | 認証・要件 |
 |:---|:---|:---|:---|
 | `DELETE` | `/v1/internal/tenants/{tenant_id}` | テナント削除時の外部 MCP サーバー一括削除クリーンアップ | `X-Internal-Secret` |
@@ -158,7 +183,7 @@ portico/
 | 変数名 | デフォルト値 | 必須 | 説明 |
 |:---|:---|:---:|:---|
 | `ENVIRONMENT` | `development` | 任意 | 実行環境 (`development` / `production`) |
-| `GATEWAY_SHARED_SECRET` | *(未設定)* | 本番必須 | ゲートウェイ共有シークレット (32文字以上。本番未設定時は起動時エラー) |
+| `GATEWAY_SHARED_SECRET` | *(未設定)* | 本番必須 | ゲートウェイ共有シークレット (32文字以上。本番環境で未設定時は起動時エラー) |
 | `GATEWAY_SHARED_SECRET_PREVIOUS` | *(未設定)* | 任意 | シークレットローテーション移行期間用の旧シークレット |
 | `GATEWAY_SECRET_HEADER` | `X-Gateway-Secret` | 任意 | シークレットを受け取るヘッダー名 |
 | `INSECURE_NO_GATEWAY_AUTH` | `false` | 任意 | `true` の場合、シークレット検証をバイパス (開発・検証専用) |
@@ -217,7 +242,7 @@ uv run uvicorn portico.main:app --host 0.0.0.0 --port 8001 --reload
 
 ### ① 外部 MCP サーバーの登録 (`POST /v1/servers`)
 
-外部の MCP サーバーをテナント向けに登録する。エンドポイントの生存確認（tools/list プローブ）と SSRF バリデーションが自動実行される。
+外部の MCP サーバーをテナント向けに登録する。エンドポイントの生存確認（`tools/list` プローブ）と SSRF バリデーションが自動実行される。
 
 ```bash
 curl -X POST http://localhost:8001/v1/servers \
@@ -273,121 +298,6 @@ async with MultiServerMCPClient(
     agent = create_react_agent(model, tools)
     # エージェント実行...
 ```
- | キーローテーション移行期間用の旧 API キー |
-| `PORTICO_API_KEYS` | *(未設定)* | 任意 | カンマ区切りの複数有効 API キー一覧 |
-| `ENFORCE_TOLLGATE_AUTH` | `false` | 任意 | 認証必須化フラグ (有効時は Bearer トークンまたは Tollgate ヘッダーが必須) |
-| `POSTGRES_URL` | `postgresql://postgres:password@localhost:5432/itcp_db` | 任意 | PostgreSQL 接続 URL。未接続時はインメモリストアへ自動フォールバック |
-| `MOCK_EXTERNAL_APIS` | `true` | 任意 | `true` の場合、実 SaaS を呼ばずにモック応答を返却 |
-| `ALLOW_LOCAL_MCP_SERVERS` | `true` (dev) / `false` (prod) | 任意 | ローカル / プライベート IP への外部 MCP サーバー登録可否 |
-| `INTERNAL_SERVICE_SECRET` | *(未設定時ランダム生成)* | 推奨 | 内部サービス間専用通信シークレット (`X-Internal-Secret` 照合用) |
-| `SECRET_ENCRYPTION_KEY` | *(未設定時ランダム生成)* | 本番必須 | 外部サーバー認証情報 (Bearer トークン等) の AES-256 暗号化キー。本番環境で未設定時は起動時エラー (Fail-Fast) |
-| `TOOL_CACHE_TTL_SECONDS` | `60` | 任意 | 外部 MCP ツール定義のインメモリキャッシュ保持秒数 |
-| `EXTERNAL_MCP_TIMEOUT_SECONDS` | `5.0` | 任意 | 外部 MCP サーバー通信タイムアウト秒数 |
-| `LOG_LEVEL` | `INFO` | 任意 | ログ出力レベル (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
-
----
-
-## クイックスタート
-
-### 前提条件
-- Docker & Docker Compose
-- （ローカル実行時）Python 3.14+ および [uv](https://github.com/astral-sh/uv)
-
-### 1. Docker Compose での一括起動 (推奨)
-
-PostgreSQL と Portico をワンコマンドで起動する。
-
-```bash
-# 1. 環境変数の準備
-cp .env.example .env
-
-# 2. コンテナ起動 (PostgreSQL + Portico)
-docker compose up -d --build
-
-# 3. ログ確認
-docker compose logs -f portico
-
-# 4. ヘルスチェック確認
-curl -i http://localhost:8001/livez
-curl -i http://localhost:8001/readyz
-```
-
-- **Portico ゲートウェイ**: `http://localhost:8001`
-- **OpenAPI 仕様**: `http://localhost:8001/v1/openapi.json`
-
-### 2. ローカル環境での起動 (uv)
-
-```bash
-# 1. 依存関係のインストール
-uv sync
-
-# 2. アプリケーション起動
-uv run uvicorn portico.main:app --host 0.0.0.0 --port 8001 --reload
-```
-
----
-
-## API & MCP 利用例
-
-### ① 外部 MCP サーバーの登録 (`POST /v1/servers`)
-
-外部の MCP サーバーをテナント向けに登録する。エンドポイントの生存確認（tools/list プローブ）と SSRF バリデーションが自動実行される。
-
-```bash
-curl -X POST http://localhost:8001/v1/servers \
-  -H "Authorization: Bearer secret-api-key" \
-  -H "X-Tenant-ID: tenant_demo" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Jira MCP",
-    "url": "https://jira.mcp.example.com",
-    "auth_type": "bearer",
-    "auth_token": "jira-secret-token-xyz",
-    "scopes": ["jira:read", "jira:write"]
-  }'
-```
-
-**レスポンス**:
-```json
-{
-  "id": "ext-7f3a9b21",
-  "tenant_id": "tenant_demo",
-  "name": "Jira MCP",
-  "url": "https://jira.mcp.example.com",
-  "status": "active",
-  "auth_type": "bearer",
-  "has_auth": true,
-  "scopes": ["jira:read", "jira:write"],
-  "is_builtin": false,
-  "created_at": "2026-09-22T01:00:00Z"
-}
-```
-
-### ② MCP クライアント（LangGraph / Claude Desktop）からの接続
-
-MCP SSE エンドポイント (`/v1/sse`) に接続することで、ビルトインツールおよび登録済み外部サーバーのツール一覧を自動探索（`tools/list`）し、ツール呼び出し（`tools/call`）を実行する。
-
-```python
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langgraph.prebuilt import create_react_agent
-
-async with MultiServerMCPClient(
-    {
-        "portico": {
-            "url": "http://localhost:8001/v1/sse",
-            "transport": "sse",
-            "headers": {
-                "Authorization": "Bearer secret-api-key",
-                "X-Tenant-ID": "tenant_demo",
-            },
-        }
-    }
-) as client:
-    tools = client.get_tools()
-    agent = create_react_agent(model, tools)
-    # エージェント実行...
-```
-
 
 ---
 
@@ -408,10 +318,10 @@ uv run pytest --cov=portico
 
 ## 詳細仕様書 & ガイド
 
-- [01. アーキテクチャ & FastMCP ハブ仕様 (docs/01_gateway_architecture.md)](docs/01_gateway_architecture.md)
-- [02. PostgreSQL mcp スキーマ & 永続化仕様 (docs/02_mcp_database_schema.md)](docs/02_mcp_database_schema.md)
-- [03. テスト・デモ用リファレンスツール仕様 (docs/03_builtin_tools_implementation.md)](docs/03_builtin_tools_implementation.md)
-- [04. 外部カスタム MCP サーバー管理 & 動的ディスパッチ仕様 (docs/04_custom_server_dispatch.md)](docs/04_custom_server_dispatch.md)
+- [01. アーキテクチャ & FastMCP ハブ仕様書 (docs/01_gateway_architecture.md)](docs/01_gateway_architecture.md)
+- [02. PostgreSQL mcp スキーマ & 永続化仕様書 (docs/02_mcp_database_schema.md)](docs/02_mcp_database_schema.md)
+- [03. テスト・デモ用リファレンスツール実装仕様書 (docs/03_builtin_tools_implementation.md)](docs/03_builtin_tools_implementation.md)
+- [04. 外部カスタム MCP サーバー管理 & 動的ディスパッチ仕様書 (docs/04_custom_server_dispatch.md)](docs/04_custom_server_dispatch.md)
 - [コントリビューションガイド (CONTRIBUTING.md)](CONTRIBUTING.md)
 - [セキュリティポリシー (SECURITY.md)](SECURITY.md)
 
