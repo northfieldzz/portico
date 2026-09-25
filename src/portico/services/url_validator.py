@@ -85,8 +85,4 @@ def validate_mcp_url(url: str, allow_local: bool = False) -> None:
             if not getattr(ip, "is_global", False):
                 raise SSRFValidationError(f"Access to non-global IP '{ip_str}' is forbidden (SSRF)")
 
-            # Catch-all for other non-global IP ranges like CGNAT (100.64.0.0/10) that bypass above checks
-            if getattr(ip, "is_global", None) is False:
-                raise SSRFValidationError(f"Access to non-global IP '{ip_str}' is forbidden (SSRF)")
-
     logger.debug("✅ MCP URL '%s' passed SSRF validation", url)
