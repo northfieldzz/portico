@@ -7,7 +7,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
 import time
 import uuid
@@ -17,7 +16,6 @@ from typing import Any
 import httpx
 from fastapi import HTTPException
 from fastapi import status as http_status
-from urllib.parse import urlsplit
 
 from portico.cache.factory import get_cache_service
 from portico.core.config import (
@@ -40,7 +38,6 @@ from portico.services.url_validator import validate_mcp_url
 from portico.storage.factory import get_server_repository
 
 logger = logging.getLogger(__name__)
-
 
 
 async def invalidate_tool_cache(tenant_id: str | None = None) -> None:
@@ -171,8 +168,6 @@ async def add_external_server(data: ServerCreateRequest, tenant_id: str) -> dict
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid MCP server URL: {exc}",
         ) from exc
-
-
 
     probe_ok = False
     async with httpx.AsyncClient(timeout=3.0) as client:
