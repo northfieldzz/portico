@@ -19,7 +19,9 @@ RUN uv build --wheel --out-dir /dist
 # ─── Production Runner Stage ─────────────────────────────────────────
 FROM python:3.14-slim AS runner
 
-LABEL maintainer="IT Context Platform"
+ARG EXTRAS=""
+
+LABEL maintainer="northfieldzz"
 LABEL service="portico"
 
 WORKDIR /app
@@ -31,9 +33,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV PATH="/root/.local/bin:$PATH"
 
-# Install production package from wheel into system site-packages
+# Install production package from wheel (with optional extras if specified)
 COPY --from=builder /dist /dist
-RUN uv pip install --system --no-cache /dist/*.whl \
+RUN if [ -n "$EXTRAS" ]; then \
+        uv pip install --system --no-cache /dist/*.whl"[$EXTRAS]"; \
+    else \
+        uv pip install --system --no-cache /dist/*.whl; \
+    fi \
     && rm -rf /dist
 
 EXPOSE 8001

@@ -1,5 +1,5 @@
 """
-IT Context Platform — MCP Gateway (Integration Hub)
+Portico — MCP Gateway (Integration Hub)
 FastAPI アプリケーション エントリポイント
 """
 
@@ -14,9 +14,9 @@ from fastapi import FastAPI
 from portico.api.router import gateway_router
 from portico.core.config import LOG_LEVEL, ROOT_PATH, validate_gateway_auth_config
 from portico.core.fastmcp_hub import gateway_mcp
-from portico.db.session import close_db_pool, init_mcp_db
 from portico.schemas.error import ErrorResponse, HTTPValidationError
 from portico.services.crypto import validate_crypto_config
+from portico.storage.factory import close_storage, init_storage
 
 load_dotenv()
 
@@ -29,14 +29,14 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """MCP Gateway 起動時のリソース初期化 (mcp スキーマの自己初期化) とクリーンアップ。"""
-    logger.info("🚀 Starting IT Context Platform — MCP Gateway")
+    """Portico 起動時のリソース初期化（ストレージ初期化）とクリーンアップ。"""
+    logger.info("🚀 Starting Portico — MCP Gateway")
     validate_crypto_config()
     validate_gateway_auth_config()
-    await init_mcp_db()
+    await init_storage()
     yield
-    logger.info("🛑 Shutting down MCP Gateway")
-    await close_db_pool()
+    logger.info("🛑 Shutting down Portico")
+    await close_storage()
 
 
 COMMON_RESPONSES = {
@@ -55,9 +55,9 @@ COMMON_RESPONSES = {
 
 
 app = FastAPI(
-    title="IT Context Platform — MCP Gateway",
+    title="Portico — MCP Gateway",
     description="SaaS ツール連携および外部 MCP サーバーの統合ハブ・実行ゲートウェイ。",
-    version="0.2.0",
+    version="0.1.0",
     root_path=ROOT_PATH,
     lifespan=lifespan,
     docs_url=None,

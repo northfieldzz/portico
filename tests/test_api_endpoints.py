@@ -4,6 +4,7 @@ Unit and integration tests for FastAPI routes and dependency injection.
 
 from __future__ import annotations
 
+import asyncio
 import socket
 from unittest.mock import AsyncMock, patch
 from urllib.parse import urlparse
@@ -13,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from portico.core.config import INTERNAL_SERVICE_SECRET
-from portico.db.session import get_memory_external_servers
+from portico.storage.factory import get_server_repository
 
 
 class TestDependencyInjection:
@@ -21,14 +22,20 @@ class TestDependencyInjection:
 
     def test_get_tenant_id_from_header(self, client: TestClient):
         """X-Tenant-ID ヘッダーからテナントIDが抽出される。"""
-        mem = get_memory_external_servers()
-        mem["srv-h1"] = {
-            "id": "srv-h1",
-            "tenant_id": "tenant_header_123",
-            "name": "H1",
-            "url": "https://h1.example.com",
-            "status": "active",
-        }
+        repo = get_server_repository()
+        asyncio.run(
+            repo.create_server(
+                "tenant_header_123",
+                {
+                    "id": "srv-h1",
+                    "name": "H1",
+                    "url": "https://h1.example.com",
+                    "status": "active",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z",
+                },
+            )
+        )
         resp = client.get("/v1/servers", headers={"X-Tenant-ID": "tenant_header_123"})
         assert resp.status_code == 200
         data = resp.json()
@@ -37,14 +44,20 @@ class TestDependencyInjection:
 
     def test_get_tenant_id_from_query(self, client: TestClient):
         """クエリパラメータ tenant_id からテナントIDが抽出される。"""
-        mem = get_memory_external_servers()
-        mem["srv-q1"] = {
-            "id": "srv-q1",
-            "tenant_id": "tenant_query_456",
-            "name": "Q1",
-            "url": "https://q1.example.com",
-            "status": "active",
-        }
+        repo = get_server_repository()
+        asyncio.run(
+            repo.create_server(
+                "tenant_query_456",
+                {
+                    "id": "srv-q1",
+                    "name": "Q1",
+                    "url": "https://q1.example.com",
+                    "status": "active",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z",
+                },
+            )
+        )
         resp = client.get("/v1/servers?tenant_id=tenant_query_456")
         assert resp.status_code == 200
         data = resp.json()
@@ -53,14 +66,20 @@ class TestDependencyInjection:
 
     def test_get_tenant_id_default(self, client: TestClient):
         """指定がない場合は tenant_default となる。"""
-        mem = get_memory_external_servers()
-        mem["srv-d1"] = {
-            "id": "srv-d1",
-            "tenant_id": "tenant_default",
-            "name": "D1",
-            "url": "https://d1.example.com",
-            "status": "active",
-        }
+        repo = get_server_repository()
+        asyncio.run(
+            repo.create_server(
+                "tenant_default",
+                {
+                    "id": "srv-d1",
+                    "name": "D1",
+                    "url": "https://d1.example.com",
+                    "status": "active",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z",
+                },
+            )
+        )
         resp = client.get("/v1/servers")
         assert resp.status_code == 200
         data = resp.json()
@@ -128,14 +147,20 @@ class TestServerRoutes:
 
     def test_delete_external_server_success(self, client: TestClient):
         """登録済み外部サーバーの削除成功。"""
-        mem = get_memory_external_servers()
-        mem["ext-123"] = {
-            "id": "ext-123",
-            "tenant_id": "tenant_del_route",
-            "name": "To Delete",
-            "url": "https://delete.example.com",
-            "status": "active",
-        }
+        repo = get_server_repository()
+        asyncio.run(
+            repo.create_server(
+                "tenant_del_route",
+                {
+                    "id": "ext-123",
+                    "name": "To Delete",
+                    "url": "https://delete.example.com",
+                    "status": "active",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z",
+                },
+            )
+        )
 
         resp = client.delete("/v1/servers/ext-123", headers={"X-Tenant-ID": "tenant_del_route"})
         assert resp.status_code == 200
@@ -186,7 +211,6 @@ class TestToolDispatchService:
     @pytest.mark.asyncio
     async def test_execute_external_tool_with_auth(self):
         """外部 MCP サーバーへのツール実行プロキシ時に認証ヘッダーが付与される。"""
-        mem = get_memory_external_servers()
         from portico.services.crypto import encrypt_auth_config
         from portico.services.server_service import dispatch_tool_call
 
@@ -196,14 +220,19 @@ class TestToolDispatchService:
                 "headers": {"Authorization": "Bearer ext-token-999"},
             }
         )
-        mem["ext-proxy-1"] = {
-            "id": "ext-proxy-1",
-            "tenant_id": "tenant_proxy_auth",
-            "name": "Proxy Target",
-            "url": "https://proxy.example.com",
-            "auth_type": "bearer",
-            "encrypted_auth_config": enc,
-        }
+        repo = get_server_repository()
+        await repo.create_server(
+            "tenant_proxy_auth",
+            {
+                "id": "ext-proxy-1",
+                "name": "Proxy Target",
+                "url": "https://proxy.example.com",
+                "auth_type": "bearer",
+                "encrypted_auth_config": enc,
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
 
         mock_resp = httpx.Response(200, json={"jsonrpc": "2.0", "result": {"value": 42}})
         with patch("httpx.AsyncClient.post", return_value=mock_resp) as mock_post:
@@ -225,21 +254,29 @@ class TestToolDispatchService:
     @pytest.mark.asyncio
     async def test_execute_namespaced_tool_targeted_routing(self):
         """名前空間付きツール名 ({server_slug}__{tool}) で呼び出した際、対象サーバーにのみプロキシ転送されることを検証。"""
-        mem = get_memory_external_servers()
         from portico.services.server_service import dispatch_tool_call
 
-        mem["srv-alpha"] = {
-            "id": "srv-alpha",
-            "tenant_id": "tenant_route_test",
-            "name": "Alpha Service",
-            "url": "https://alpha.example.com",
-        }
-        mem["srv-beta"] = {
-            "id": "srv-beta",
-            "tenant_id": "tenant_route_test",
-            "name": "Beta Service",
-            "url": "https://beta.example.com",
-        }
+        repo = get_server_repository()
+        await repo.create_server(
+            "tenant_route_test",
+            {
+                "id": "srv-alpha",
+                "name": "Alpha Service",
+                "url": "https://alpha.example.com",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
+        await repo.create_server(
+            "tenant_route_test",
+            {
+                "id": "srv-beta",
+                "name": "Beta Service",
+                "url": "https://beta.example.com",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
 
         mock_post_resp = httpx.Response(200, json={"jsonrpc": "2.0", "result": {"server": "alpha"}})
 
@@ -252,7 +289,6 @@ class TestToolDispatchService:
             )
             assert result["server"] == "alpha"
 
-            # 送信先 URL が alpha.example.com であること (beta には送られない)
             called_url = mock_post.call_args[0][0]
             parsed_called_url = urlparse(called_url)
             assert parsed_called_url.scheme == "https"

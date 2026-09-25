@@ -10,27 +10,32 @@ from urllib.parse import urlparse
 import httpx
 import pytest
 
-from portico.db.session import get_memory_external_servers
 from portico.schemas.server import ServerCreateRequest
 from portico.services.server_service import (
     add_external_server,
     get_aggregated_tools,
     invalidate_tool_cache,
 )
+from portico.storage.factory import get_server_repository
 
 
 @pytest.mark.asyncio
 async def test_tool_cache_hit_avoids_repeated_http_calls():
     """1回目の取得後はキャッシュから返却され、外部通信が繰り返されないこと"""
-    invalidate_tool_cache()
-    mem = get_memory_external_servers()
-    mem["srv-cache-test"] = {
-        "id": "srv-cache-test",
-        "tenant_id": "tenant_cache_test",
-        "name": "Cache MCP",
-        "url": "https://cache.example.com",
-        "scopes": [],
-    }
+    await invalidate_tool_cache()
+    repo = get_server_repository()
+    await repo.create_server(
+        "tenant_cache_test",
+        {
+            "id": "srv-cache-test",
+            "name": "Cache MCP",
+            "url": "https://cache.example.com",
+            "scopes": [],
+            "status": "active",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+        },
+    )
 
     mock_resp = httpx.Response(
         200,
@@ -53,15 +58,20 @@ async def test_tool_cache_hit_avoids_repeated_http_calls():
 @pytest.mark.asyncio
 async def test_tool_cache_invalidated_on_server_mutation():
     """サーバーの登録または削除時にキャッシュが自動パージされること"""
-    invalidate_tool_cache()
+    await invalidate_tool_cache()
     tenant = "tenant_mutation_test"
-    mem = get_memory_external_servers()
-    mem["srv-m1"] = {
-        "id": "srv-m1",
-        "tenant_id": tenant,
-        "name": "M1",
-        "url": "https://m1.example.com",
-    }
+    repo = get_server_repository()
+    await repo.create_server(
+        tenant,
+        {
+            "id": "srv-m1",
+            "name": "M1",
+            "url": "https://m1.example.com",
+            "status": "active",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+        },
+    )
 
     mock_resp = httpx.Response(
         200,
@@ -94,21 +104,31 @@ async def test_tool_cache_invalidated_on_server_mutation():
 @pytest.mark.asyncio
 async def test_parallel_tool_fetch_resilience():
     """1台の外部サーバーがエラーになっても、他のサーバーのツール取得が成功すること"""
-    invalidate_tool_cache()
+    await invalidate_tool_cache()
     tenant = "tenant_resilience_test"
-    mem = get_memory_external_servers()
-    mem["srv-ok"] = {
-        "id": "srv-ok",
-        "tenant_id": tenant,
-        "name": "OK Server",
-        "url": "https://ok.example.com",
-    }
-    mem["srv-ng"] = {
-        "id": "srv-ng",
-        "tenant_id": tenant,
-        "name": "NG Server",
-        "url": "https://ng.example.com",
-    }
+    repo = get_server_repository()
+    await repo.create_server(
+        tenant,
+        {
+            "id": "srv-ok",
+            "name": "OK Server",
+            "url": "https://ok.example.com",
+            "status": "active",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+        },
+    )
+    await repo.create_server(
+        tenant,
+        {
+            "id": "srv-ng",
+            "name": "NG Server",
+            "url": "https://ng.example.com",
+            "status": "active",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+        },
+    )
 
     async def mock_post(url, **kwargs):
         hostname = urlparse(str(url)).hostname

@@ -11,7 +11,6 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from portico.db.session import get_memory_external_servers
 from portico.schemas.server import AuthType, ServerCreateRequest
 from portico.services.server_service import (
     add_external_server,
@@ -21,6 +20,7 @@ from portico.services.server_service import (
     list_servers_for_tenant,
     remove_external_server,
 )
+from portico.storage.factory import get_server_repository
 
 
 class TestServerService:
@@ -35,21 +35,29 @@ class TestServerService:
     @pytest.mark.asyncio
     async def test_tenant_isolation_in_memory(self):
         """テナント A と テナント B の外部サーバーが相互に混ざらない。"""
-        mem = get_memory_external_servers()
-        mem["srv-1"] = {
-            "id": "srv-1",
-            "tenant_id": "tenant_a",
-            "name": "Server A",
-            "url": "https://a.mcp.example.com",
-            "status": "active",
-        }
-        mem["srv-2"] = {
-            "id": "srv-2",
-            "tenant_id": "tenant_b",
-            "name": "Server B",
-            "url": "https://b.mcp.example.com",
-            "status": "active",
-        }
+        repo = get_server_repository()
+        await repo.create_server(
+            "tenant_a",
+            {
+                "id": "srv-1",
+                "name": "Server A",
+                "url": "https://a.mcp.example.com",
+                "status": "active",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
+        await repo.create_server(
+            "tenant_b",
+            {
+                "id": "srv-2",
+                "name": "Server B",
+                "url": "https://b.mcp.example.com",
+                "status": "active",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
 
         servers_a = await list_servers_for_tenant("tenant_a")
         server_names_a = [s["name"] for s in servers_a]
@@ -63,7 +71,7 @@ class TestServerService:
 
     @pytest.mark.asyncio
     async def test_add_external_server_success(self):
-        """外部サーバーの登録、プローブ判定、AI Engine への通知が正常に行われる。"""
+        """外部サーバーの登録、プローブ判定が正常に行われる。"""
 
         async def mock_post(url, **kwargs):
             if "/sync" in str(url):
@@ -74,7 +82,7 @@ class TestServerService:
             mock_dns.return_value = [(2, 1, 6, "", ("93.184.216.34", 443))]
             req = ServerCreateRequest(name="Jira MCP", url="https://jira.mcp.example.com")
 
-            with patch("httpx.AsyncClient.post", side_effect=mock_post) as mock_p:
+            with patch("httpx.AsyncClient.post", side_effect=mock_post):
                 res = await add_external_server(req, tenant_id="tenant_jira")
 
                 assert res["name"] == "Jira MCP"
@@ -90,21 +98,29 @@ class TestServerService:
             patch("portico.services.server_service.MAX_SERVERS_PER_TENANT", 2),
             patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.216.34", 443))]),
         ):
-            mem = get_memory_external_servers()
-            mem["s-1"] = {
-                "id": "s-1",
-                "tenant_id": "tenant_limit_test",
-                "name": "S1",
-                "url": "http://s1",
-                "is_builtin": False,
-            }
-            mem["s-2"] = {
-                "id": "s-2",
-                "tenant_id": "tenant_limit_test",
-                "name": "S2",
-                "url": "http://s2",
-                "is_builtin": False,
-            }
+            repo = get_server_repository()
+            await repo.create_server(
+                "tenant_limit_test",
+                {
+                    "id": "s-1",
+                    "name": "S1",
+                    "url": "http://s1",
+                    "is_builtin": False,
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z",
+                },
+            )
+            await repo.create_server(
+                "tenant_limit_test",
+                {
+                    "id": "s-2",
+                    "name": "S2",
+                    "url": "http://s2",
+                    "is_builtin": False,
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z",
+                },
+            )
 
             req = ServerCreateRequest(name="S3", url="https://s3.example.com")
             with pytest.raises(HTTPException) as exc_info:
@@ -115,19 +131,23 @@ class TestServerService:
     @pytest.mark.asyncio
     async def test_remove_external_server(self):
         """外部サーバーの削除テスト。"""
-        mem = get_memory_external_servers()
-        mem["srv-del"] = {
-            "id": "srv-del",
-            "tenant_id": "tenant_del",
-            "name": "Delete Me",
-            "url": "https://del.example.com",
-            "status": "active",
-        }
+        repo = get_server_repository()
+        await repo.create_server(
+            "tenant_del",
+            {
+                "id": "srv-del",
+                "name": "Delete Me",
+                "url": "https://del.example.com",
+                "status": "active",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
 
         # 正常削除
         deleted = await remove_external_server("srv-del", "tenant_del")
         assert deleted is True
-        assert "srv-del" not in mem
+        assert await repo.get_server("tenant_del", "srv-del") is None
 
         # 存在しないサーバーの削除は False
         deleted_nonexist = await remove_external_server("srv-nonexist", "tenant_del")
@@ -136,27 +156,31 @@ class TestServerService:
     @pytest.mark.asyncio
     async def test_delete_all_servers_for_tenant(self):
         """テナント一括削除時に該当テナントのサーバーのみ削除される。"""
-        mem = get_memory_external_servers()
-        mem["s1"] = {"id": "s1", "tenant_id": "tenant_x", "name": "S1", "url": "http://1"}
-        mem["s2"] = {"id": "s2", "tenant_id": "tenant_x", "name": "S2", "url": "http://2"}
-        mem["s3"] = {"id": "s3", "tenant_id": "tenant_y", "name": "S3", "url": "http://3"}
+        repo = get_server_repository()
+        await repo.create_server("tenant_x", {"id": "s1", "name": "S1", "url": "http://1", "created_at": "2026-01-01", "updated_at": "2026-01-01"})
+        await repo.create_server("tenant_x", {"id": "s2", "name": "S2", "url": "http://2", "created_at": "2026-01-01", "updated_at": "2026-01-01"})
+        await repo.create_server("tenant_y", {"id": "s3", "name": "S3", "url": "http://3", "created_at": "2026-01-01", "updated_at": "2026-01-01"})
 
         count = await delete_all_servers_for_tenant("tenant_x")
         assert count == 2
-        assert "s1" not in mem
-        assert "s2" not in mem
-        assert "s3" in mem  # tenant_y は保持される
+        assert await repo.get_server("tenant_x", "s1") is None
+        assert await repo.get_server("tenant_x", "s2") is None
+        assert await repo.get_server("tenant_y", "s3") is not None
 
     @pytest.mark.asyncio
     async def test_get_aggregated_tools(self):
         """標準ツールと外部 MCP サーバーのツールマニフェストがマージされる。"""
-        mem = get_memory_external_servers()
-        mem["s-ext"] = {
-            "id": "s-ext",
-            "tenant_id": "tenant_agg",
-            "name": "External Tools",
-            "url": "https://ext.example.com",
-        }
+        repo = get_server_repository()
+        await repo.create_server(
+            "tenant_agg",
+            {
+                "id": "s-ext",
+                "name": "External Tools",
+                "url": "https://ext.example.com",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
 
         mock_resp = httpx.Response(
             200,
@@ -177,19 +201,27 @@ class TestServerService:
     @pytest.mark.asyncio
     async def test_namespaced_tools_collision_prevention(self):
         """同一ツール名を持つ2つの外部 MCP サーバーが登録された際、名前空間によって衝突せず共存できることを検証。"""
-        mem = get_memory_external_servers()
-        mem["srv-slack"] = {
-            "id": "srv-slack",
-            "tenant_id": "tenant_collision",
-            "name": "Slack MCP",
-            "url": "https://slack.example.com",
-        }
-        mem["srv-teams"] = {
-            "id": "srv-teams",
-            "tenant_id": "tenant_collision",
-            "name": "Teams MCP",
-            "url": "https://teams.example.com",
-        }
+        repo = get_server_repository()
+        await repo.create_server(
+            "tenant_collision",
+            {
+                "id": "srv-slack",
+                "name": "Slack MCP",
+                "url": "https://slack.example.com",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
+        await repo.create_server(
+            "tenant_collision",
+            {
+                "id": "srv-teams",
+                "name": "Teams MCP",
+                "url": "https://teams.example.com",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
 
         async def mock_post_collision(url, **kwargs):
             host = urlparse(str(url)).hostname
@@ -202,11 +234,9 @@ class TestServerService:
         with patch("httpx.AsyncClient.post", side_effect=mock_post_collision):
             tools = await get_aggregated_tools("tenant_collision")
             tool_names = [t["name"] for t in tools]
-            # 両サーバーの同名ツールが独立した名前空間で保持されること
             assert "slack_mcp__send_message" in tool_names
             assert "teams_mcp__send_message" in tool_names
 
-            # 各ツールの server_name, original_name, description の整合性を確認
             slack_tool = next(t for t in tools if t["name"] == "slack_mcp__send_message")
             teams_tool = next(t for t in tools if t["name"] == "teams_mcp__send_message")
             assert slack_tool["original_name"] == "send_message"
@@ -238,9 +268,8 @@ class TestServerService:
             with patch("httpx.AsyncClient.post", side_effect=mock_post) as mock_p:
                 server = await add_external_server(req, "tenant_auth")
                 assert server["auth_type"] == "bearer"
-
                 assert server["has_auth"] is True
-                assert "jwt-secret-abc" not in str(server)  # 生トークンが露出していないこと
+                assert "jwt-secret-abc" not in str(server)
 
                 # プローブ時に Authorization ヘッダーが付与されていること
                 probe_call = mock_p.call_args_list[0]

@@ -1,5 +1,6 @@
-include:
-  - path: postgres.compose.yaml
+# ═══════════════════════════════════════════════════════════════════════
+#  Portico — Docker Compose Configuration
+# ═══════════════════════════════════════════════════════════════════════
 
 services:
   portico:
@@ -9,16 +10,40 @@ services:
     ports:
       - "8001:8001"
     environment:
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-sqlite}
+      SQLITE_DB_PATH: /data/portico.db
+      CACHE_LAYER: ${CACHE_LAYER:-two_tier}
+      VALKEY_URL: ${VALKEY_URL:-redis://valkey:6379/0}
+      CACHE_L1_TTL_SECONDS: ${CACHE_L1_TTL_SECONDS:-30}
+      CACHE_L2_TTL_SECONDS: ${CACHE_L2_TTL_SECONDS:-300}
       ROOT_PATH: ${ROOT_PATH:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       MOCK_EXTERNAL_APIS: ${MOCK_EXTERNAL_APIS:-true}
-      POSTGRES_URL: ${POSTGRES_URL:-postgresql://postgres:password@postgres:5432/itcp_db}
+      INSECURE_NO_GATEWAY_AUTH: ${INSECURE_NO_GATEWAY_AUTH:-true}
+    volumes:
+      - portico_data:/data
     depends_on:
-      postgres:
+      valkey:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD-SHELL", "wget -q --spider http://localhost:8001/health || exit 1" ]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8001/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  portico_data:
+  valkey_data:

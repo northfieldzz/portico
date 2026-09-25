@@ -16,13 +16,9 @@ MOCK_EXTERNAL_APIS = os.getenv(
     "MOCK_EXTERNAL_APIS",
     "true" if ENVIRONMENT != "production" else "false",
 ).lower() in ("true", "1", "yes")
-POSTGRES_URL = os.getenv(
-    "POSTGRES_URL",
-    "postgresql://postgres:password@postgres:5432/itcp_db",
-).replace("postgresql+asyncpg://", "postgresql://")
+
 ROOT_PATH = os.getenv("ROOT_PATH", "/gateway")
 MAX_SERVERS_PER_TENANT = int(os.getenv("MAX_SERVERS_PER_TENANT", "50"))
-
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", secrets.token_hex(32))
@@ -34,6 +30,39 @@ GATEWAY_SHARED_SECRET_PREVIOUS = os.getenv("GATEWAY_SHARED_SECRET_PREVIOUS")
 GATEWAY_SECRET_HEADER = os.getenv("GATEWAY_SECRET_HEADER", "X-Gateway-Secret")
 INSECURE_NO_GATEWAY_AUTH = os.getenv("INSECURE_NO_GATEWAY_AUTH", "false").lower() in ("true", "1", "yes")
 DEFAULT_TENANT_ID = os.getenv("DEFAULT_TENANT_ID", "tenant_default")
+
+# ── ストレージ設定 (Zero-Ops / Multi-Cloud) ─────────────────────────────
+# sqlite (既定) | dynamodb (AWS) | firestore (GCP) | cosmosdb (Azure) | memory
+STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "sqlite").lower()
+
+# SQLite 設定
+SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "portico.db")
+
+# AWS DynamoDB 設定
+DYNAMODB_TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "portico_servers")
+AWS_REGION = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "ap-northeast-1"))
+
+# GCP Firestore 設定
+FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "portico_servers")
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
+
+# Azure Cosmos DB 設定
+COSMOS_ENDPOINT = os.getenv("COSMOS_ENDPOINT")
+COSMOS_KEY = os.getenv("COSMOS_KEY")
+COSMOS_DATABASE = os.getenv("COSMOS_DATABASE", "portico_db")
+COSMOS_CONTAINER = os.getenv("COSMOS_CONTAINER", "portico_servers")
+
+# ── 二段キャッシュ設定 (L1: In-Memory, L2: Valkey/Redis) ──────────────────
+# two_tier (既定: L1+L2) | memory (L1のみ) | valkey (L2のみ) | none (キャッシュ無効)
+CACHE_LAYER = os.getenv("CACHE_LAYER", "two_tier" if os.getenv("VALKEY_URL") or os.getenv("REDIS_URL") else "memory").lower()
+CACHE_L1_TTL_SECONDS = int(os.getenv("CACHE_L1_TTL_SECONDS", "30"))
+CACHE_L1_MAXSIZE = int(os.getenv("CACHE_L1_MAXSIZE", "1000"))
+CACHE_L2_TTL_SECONDS = int(os.getenv("CACHE_L2_TTL_SECONDS", "300"))
+VALKEY_URL = os.getenv("VALKEY_URL") or os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+# 外部 MCP サーバー連携・ツールキャッシュ設定
+TOOL_CACHE_TTL_SECONDS = int(os.getenv("TOOL_CACHE_TTL_SECONDS", "60"))
+EXTERNAL_MCP_TIMEOUT_SECONDS = float(os.getenv("EXTERNAL_MCP_TIMEOUT_SECONDS", "5.0"))
 
 
 def get_valid_gateway_secrets() -> list[str]:
@@ -62,8 +91,3 @@ def validate_gateway_auth_config() -> None:
         for s in valid_secrets:
             if len(s) < 32 and ENVIRONMENT == "production":
                 raise RuntimeError("GATEWAY_SHARED_SECRET must be at least 32 characters long in production")
-
-
-# 外部 MCP サーバー連携・キャッシュ設定
-TOOL_CACHE_TTL_SECONDS = int(os.getenv("TOOL_CACHE_TTL_SECONDS", "60"))
-EXTERNAL_MCP_TIMEOUT_SECONDS = float(os.getenv("EXTERNAL_MCP_TIMEOUT_SECONDS", "5.0"))

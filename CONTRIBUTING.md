@@ -116,7 +116,8 @@ curl -i http://localhost:8001/readyz
 src/portico/
 ├── api/              # API ルーティング & 依存性注入 (FastAPI router, deps)
 ├── core/             # グローバル設定 (config)、FastMCP ハブ初期化
-├── db/               # PostgreSQL コネクションプール & mcp スキーマ管理 (RLS)
+├── cache/            # 二段キャッシュ (L1: In-Memory, L2: Valkey/Redis)
+├── storage/          # ゼロ運用ストレージ (SQLite, DynamoDB, Firestore, Cosmos DB)
 ├── schemas/          # Pydantic リクエスト/レスポンススキーマ
 ├── services/         # サーバー管理、ツールディスパッチ、監査ログ、URL 検証、暗号化
 └── tools/            # テスト・PoC 用組み込みリファレンスツール (Slack / Google)

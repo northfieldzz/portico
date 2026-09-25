@@ -3,7 +3,9 @@
 [![Python](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-009688.svg)](https://fastapi.tiangolo.com/)
 [![FastMCP](https://img.shields.io/badge/FastMCP-3.2+-green.svg)](https://github.com/PrefectHQ/fastmcp)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791.svg)](https://www.postgresql.org/)
+[![SQLite](https://img.shields.io/badge/SQLite-3-003B57.svg?logo=sqlite)](https://www.sqlite.org/)
+[![DynamoDB](https://img.shields.io/badge/DynamoDB-AWS_Serverless-4053D6.svg?logo=amazondynamodb)](https://aws.amazon.com/dynamodb/)
+[![Valkey](https://img.shields.io/badge/Valkey-8_Distributed_Cache-FF4500.svg)](https://valkey.io/)
 [![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-E6522C.svg?logo=prometheus)](https://prometheus.io/)
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-6BA539.svg?logo=openapiinitiative)](https://spec.openapis.org/oas/v3.1.0)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](LICENSE)
@@ -37,19 +39,18 @@ AI Engine や MCP クライアント（Claude Desktop, Cursor, LangGraph 等）�
   - ツール一覧の探索（`tools/list`）およびツール実行（`tools/call`）を MCP プロトコルで完全サポート。
 - **外部カスタム MCP サーバー管理 & 動的ルーティング**:
   - テナントごとに独自の MCP サーバー（社内 Active Directory、オンプレミスシステム等）を動的に登録・削除・管理。
-  - 外部サーバーのツール一覧を並列フェッチし、TTL キャッシュで高速返却。
-- **堅牢なマルチテナント & データ分離**:
-  - PostgreSQL 独立スキーマ `mcp` および Row Level Security (RLS) によるテナント間データ分離。
-  - DB 未接続時はインメモリストアへ自動フォールバック。
+  - 外部サーバーのツール一覧を並列フェッチし、二段キャッシュで高速返却。
+- **マルチクラウド・ゼロ運用ストレージ & 二段キャッシュ**:
+  - **マスターストア**: SQLite（ローカル・単体運用）、AWS DynamoDB、GCP Cloud Firestore、Azure Cosmos DB をサポート（クラウド非依存）。
+  - **二段キャッシュ**: プロセス内インメモリキャッシュ (L1) ＋ 分散 Valkey/Redis キャッシュ (L2) によりマイクロ秒レイテンシで応答。
 - **セキュリティ & ガバナンス (Kura / Tollgate 準拠)**:
   - **Gateway 共有シークレット認証**: 前段ゲートウェイ（Tollgate 等）からのアクセスを `X-Gateway-Secret` の定数時間比較で相互信頼確認。
   - **無停止シークレットローテーション**: `GATEWAY_SHARED_SECRET_PREVIOUS` による新旧シークレットの並行受付。
   - **Fail-Fast な整合性検証**: クライアント指定テナントとプロキシ指定 `X-Tenant-ID` の不一致（コンフリクト）時は `403 Forbidden` で即座に遮断。
   - **SSRF 防止 & 安全性検証**: 外部 MCP サーバー登録時のプライベート IP・ループバック・クラウドメタデータ IP 遮断。
   - **内部シークレット保護**: `X-Internal-Secret` の定数時間比較（`secrets.compare_digest`）によるタイミング攻撃防御。
-  - **暗号化キー本番バリデーション**: 本番環境でのキー未設定による脆弱性抑止 (Fail-Fast)。
+  - **暗号化キー本番バリデーション**: 外部認証情報を AES-256-GCM で暗号化保管。本番環境でのキー未設定による脆弱性抑止 (Fail-Fast)。
   - **構造化監査ログ**: ツール実行ごとの結果、実行時間、テナント情報を `portico.audit` に記録。
-  - **機密情報漏洩防止**: ツール実行時の例外スタックトレースを外部へ非公開化。
 - **PoC・デモ用リファレンスツール**:
   - Slack（招待、メッセージ送信）、Google Workspace（アカウント作成、グループ追加）。
   - `MOCK_EXTERNAL_APIS=true` により、実 API クレデンシャル不要で安全にデモ実行可能。
@@ -71,21 +72,24 @@ flowchart TD
             MGMT["外部 MCP 管理 REST<br/>• GET/POST/DELETE /v1/servers"]
         end
         
+        subgraph CacheLayer ["二段キャッシュ層 (L1 / L2)"]
+            L1["L1: In-Memory (0.001ms)"]
+            L2["L2: Valkey / Redis (0.5ms)"]
+        end
+        
+        subgraph MasterStore ["ゼロ運用マスターストア"]
+            SQLITE["SQLite (Local/Docker)"]
+            DYNAMO["AWS DynamoDB"]
+            GCP["GCP Firestore"]
+            COSMOS["Azure Cosmos DB"]
+        end
+        
         subgraph CoreServices ["コアサービス"]
             DISPATCH["動的ディスパッチャー / ツール集約"]
-            CACHE["TTL ツールキャッシュ"]
             AUDIT["監査ログ・SSRF バリデーター"]
         end
-        
-        subgraph Adapters ["組み込みリファレンスツール"]
-            SLACK["Slack Adapter"]
-            GOOGLE["Google Adapter"]
-        end
-        
-        DB_POOL["PostgreSQL プール<br/>• mcp 独立スキーマ (RLS)"]
     end
     
-    EXT_SaaS["外部 SaaS (Slack / Google)"]
     EXT_MCP["顧客・外部 MCP サーバー"]
 
     AI -->|"リクエスト"| GW
@@ -94,13 +98,11 @@ flowchart TD
     
     SSE --> ROUTER
     MGMT --> ROUTER
-    ROUTER --> CoreServices
+    ROUTER --> CacheLayer
+    CacheLayer -- キャッシュミス --> MasterStore
+    CacheLayer --> CoreServices
     
-    CoreServices --> Adapters
-    CoreServices --> DB_POOL
     CoreServices -->|"プロキシ実行"| EXT_MCP
-    
-    Adapters -->|"API 連携 (モック切替可)"| EXT_SaaS
 ```
 
 ---
@@ -109,12 +111,14 @@ flowchart TD
 
 ```text
 portico/
-├── compose.yaml              # Docker Compose 定義 (Portico + PostgreSQL)
-├── postgres.compose.yaml     # PostgreSQL 17 (pgvector) 単体起動定義
+├── compose.yaml              # Docker Compose 定義 (Portico + Valkey)
 ├── Dockerfile                # マルチステージビルド Dockerfile
 ├── pyproject.toml            # プロジェクト定義 & 依存関係 (Hatchling)
 ├── uv.lock                   # uv ロックファイル
 ├── .env.example              # 環境変数サンプル
+├── CHANGELOG.md              # 変更履歴
+├── SECURITY.md               # セキュリティポリシー
+├── CONTRIBUTING.md           # コントリビューションガイド
 ├── docs/                     # 詳細仕様書
 │   ├── 01_gateway_architecture.md
 │   ├── 02_mcp_database_schema.md
@@ -128,13 +132,12 @@ portico/
 │       │   ├── router.py     # ルーター集約
 │       │   └── routes/       # 各機能エンドポイント (servers, internal, ops)
 │       ├── core/             # 設定管理、FastMCP ハブ
-│       ├── db/               # PostgreSQL プール & mcp スキーマ管理 (RLS)
+│       ├── cache/            # 二段キャッシュ (L1: In-Memory, L2: Valkey)
+│       ├── storage/          # ゼロ運用ストレージ (SQLite, DynamoDB, Firestore, Cosmos DB)
 │       ├── schemas/          # Pydantic スキーマ
 │       ├── services/         # サーバー管理、ツールディスパッチ、監査ログ、暗号化
 │       └── tools/            # テスト・PoC 用リファレンスツール (Slack / Google)
 ├── tests/                    # pytest 単体・統合テストスイート
-├── CONTRIBUTING.md           # コントリビューションガイド
-├── SECURITY.md               # セキュリティポリシー
 └── README.md                 # 本ドキュメント
 ```
 
@@ -169,8 +172,8 @@ portico/
 | メソッド | パス | 説明 |
 |:---|:---|:---|
 | `GET` | `/livez` (`/health/live`) | **Liveness プローブ** (プロセスの死活監視、即座に 200 返却) |
-| `GET` | `/readyz` (`/health/ready`) | **Readiness プローブ** (PostgreSQL 疎通確認、受付準備完了判定) |
-| `GET` | `/health` | **総合ヘルスチェック** (プロセス生存 + DB 疎通状態) |
+| `GET` | `/readyz` (`/health/ready`) | **Readiness プローブ** (ストレージ疎通確認、受付準備完了判定) |
+| `GET` | `/health` | **総合ヘルスチェック** (プロセス生存 + ストレージ疎通状態) |
 | `GET` | `/metrics` | **Prometheus メトリクス** (ツール実行数、レイテンシ等) |
 | `GET` | `/v1/openapi.json` | OpenAPI 3.1 仕様 JSON |
 
@@ -187,13 +190,16 @@ portico/
 | `GATEWAY_SHARED_SECRET_PREVIOUS` | *(未設定)* | 任意 | シークレットローテーション移行期間用の旧シークレット |
 | `GATEWAY_SECRET_HEADER` | `X-Gateway-Secret` | 任意 | シークレットを受け取るヘッダー名 |
 | `INSECURE_NO_GATEWAY_AUTH` | `false` | 任意 | `true` の場合、シークレット検証をバイパス (開発・検証専用) |
-| `POSTGRES_URL` | `postgresql://postgres:password@localhost:5432/itcp_db` | 任意 | PostgreSQL 接続 URL。未接続時はインメモリストアへ自動フォールバック |
+| `STORAGE_BACKEND` | `sqlite` | 任意 | マスターストア種別 (`sqlite` / `dynamodb` / `firestore` / `cosmosdb` / `memory`) |
+| `SQLITE_DB_PATH` | `portico.db` | 任意 | SQLite データベースファイルパス |
+| `CACHE_LAYER` | `two_tier` / `memory` | 任意 | キャッシュ階層 (`two_tier` / `memory` / `valkey` / `none`) |
+| `VALKEY_URL` | `redis://localhost:6379/0` | 任意 | 分散キャッシュ Valkey / Redis 接続 URL |
+| `CACHE_L1_TTL_SECONDS` | `30` | 任意 | L1 インメモリキャッシュ保持秒数 |
+| `CACHE_L2_TTL_SECONDS` | `300` | 任意 | L2 分散キャッシュ保持秒数 |
 | `MOCK_EXTERNAL_APIS` | `true` | 任意 | `true` の場合、実 SaaS を呼ばずにモック応答を返却 |
 | `ALLOW_LOCAL_MCP_SERVERS` | `true` (dev) / `false` (prod) | 任意 | ローカル / プライベート IP への外部 MCP サーバー登録可否 |
 | `INTERNAL_SERVICE_SECRET` | *(未設定時ランダム生成)* | 推奨 | 内部サービス間専用通信シークレット (`X-Internal-Secret` 照合用) |
-| `SECRET_ENCRYPTION_KEY` | *(未設定時ランダム生成)* | 本番必須 | 外部サーバー認証情報 (Bearer トークン等) の AES-256 暗号化キー。本番環境で未設定時は起動時エラー (Fail-Fast) |
-| `TOOL_CACHE_TTL_SECONDS` | `60` | 任意 | 外部 MCP ツール定義のインメモリキャッシュ保持秒数 |
-| `EXTERNAL_MCP_TIMEOUT_SECONDS` | `5.0` | 任意 | 外部 MCP サーバー通信タイムアウト秒数 |
+| `SECRET_ENCRYPTION_KEY` | *(未設定時ランダム生成)* | 本番必須 | 外部サーバー認証情報の AES-256 暗号化キー。本番環境で未設定時は起動時エラー (Fail-Fast) |
 | `LOG_LEVEL` | `INFO` | 任意 | ログ出力レベル (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 
 ---
@@ -204,15 +210,13 @@ portico/
 - Docker & Docker Compose
 - （ローカル実行時）Python 3.14+ および [uv](https://github.com/astral-sh/uv)
 
-### 1. Docker Compose での一括起動 (推奨)
-
-PostgreSQL と Portico をワンコマンドで起動する。
+### 1. Docker Compose での起動 (Valkey 二段キャッシュ付き)
 
 ```bash
 # 1. 環境変数の準備
 cp .env.example .env
 
-# 2. コンテナ起動 (PostgreSQL + Portico)
+# 2. コンテナ起動 (Portico + Valkey)
 docker compose up -d --build
 
 # 3. ログ確認
@@ -226,11 +230,17 @@ curl -i http://localhost:8001/readyz
 - **Portico ゲートウェイ**: `http://localhost:8001`
 - **OpenAPI 仕様**: `http://localhost:8001/v1/openapi.json`
 
-### 2. ローカル環境での起動 (uv)
+### 2. ローカル環境での起動 (uv, ゼロ依存 SQLite)
 
 ```bash
-# 1. 依存関係のインストール
+# 1. 依存関係のインストール (基本: SQLite / Valkey)
 uv sync
+
+# (任意) クラウド専用 SDK の追加インストール
+# AWS DynamoDB:    pip install "portico[dynamodb]"    (uv add "portico[dynamodb]")
+# GCP Firestore:   pip install "portico[firestore]"   (uv add "portico[firestore]")
+# Azure Cosmos DB: pip install "portico[cosmos]"      (uv add "portico[cosmos]")
+# 全クラウド対応:   pip install "portico[all]"         (uv add "portico[all]")
 
 # 2. アプリケーション起動
 uv run uvicorn portico.main:app --host 0.0.0.0 --port 8001 --reload
@@ -246,57 +256,62 @@ uv run uvicorn portico.main:app --host 0.0.0.0 --port 8001 --reload
 
 ```bash
 curl -X POST http://localhost:8001/v1/servers \
-  -H "X-Gateway-Secret: your-gateway-shared-secret-32-chars" \
+  -H "X-Gateway-Secret: your_gateway_shared_secret" \
   -H "X-Tenant-ID: tenant_demo" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Jira MCP",
-    "url": "https://jira.mcp.example.com",
+    "name": "Internal ActiveDirectory MCP",
+    "url": "https://mcp-ad.internal.example.com/sse",
     "auth_type": "bearer",
-    "auth_token": "jira-secret-token-xyz",
-    "scopes": ["jira:read", "jira:write"]
+    "auth_token": "eyJhbGciOi...",
+    "scopes": ["admin:*", "users:read"]
   }'
 ```
 
-**レスポンス**:
+### ② 外部 MCP サーバー一覧の取得 (`GET /v1/servers`)
+
+```bash
+curl -X GET http://localhost:8001/v1/servers \
+  -H "X-Gateway-Secret: your_gateway_shared_secret" \
+  -H "X-Tenant-ID: tenant_demo"
+```
+
+### ③ MCP クライアント連携 (`/v1/sse`)
+
+Claude Desktop や Cursor、LangGraph の MCP 設定に追加することで、統合された全ツールへアクセス可能。
+
+#### Claude Desktop 設定例 (`claude_desktop_config.json`)
+
 ```json
 {
-  "id": "ext-7f3a9b21",
-  "tenant_id": "tenant_demo",
-  "name": "Jira MCP",
-  "url": "https://jira.mcp.example.com",
-  "status": "active",
-  "auth_type": "bearer",
-  "has_auth": true,
-  "scopes": ["jira:read", "jira:write"],
-  "is_builtin": false,
-  "created_at": "2026-09-22T01:00:00Z"
+  "mcpServers": {
+    "portico": {
+      "url": "http://localhost:8001/v1/sse",
+      "headers": {
+        "X-Gateway-Secret": "your_gateway_shared_secret",
+        "X-Tenant-ID": "tenant_demo"
+      }
+    }
+  }
 }
 ```
 
-### ② MCP クライアント（LangGraph / Claude Desktop）からの接続
-
-MCP SSE エンドポイント (`/v1/sse`) に接続することで、ビルトインツールおよび登録済み外部サーバーのツール一覧を自動探索（`tools/list`）し、ツール呼び出し（`tools/call`）を実行する。
+#### LangGraph / Python クライアント例
 
 ```python
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langgraph.prebuilt import create_react_agent
+from mcp.client.sse import sse_client
+from mcp.client.session import ClientSession
 
-async with MultiServerMCPClient(
-    {
-        "portico": {
-            "url": "http://localhost:8001/v1/sse",
-            "transport": "sse",
-            "headers": {
-                "X-Gateway-Secret": "your-gateway-shared-secret-32-chars",
-                "X-Tenant-ID": "tenant_demo",
-            },
-        }
-    }
-) as client:
-    tools = client.get_tools()
-    agent = create_react_agent(model, tools)
-    # エージェント実行...
+headers = {
+    "X-Gateway-Secret": "your_gateway_shared_secret",
+    "X-Tenant-ID": "tenant_demo",
+}
+
+async with sse_client("http://localhost:8001/v1/sse", headers=headers) as (read, write):
+    async with ClientSession(read, write) as session:
+        await session.initialize()
+        tools = await session.list_tools()
+        print(f"利用可能なツール数: {len(tools.tools)}")
 ```
 
 ---
@@ -319,15 +334,15 @@ uv run pytest --cov=portico
 ## 詳細仕様書 & ガイド
 
 - [01. アーキテクチャ & FastMCP ハブ仕様書 (docs/01_gateway_architecture.md)](docs/01_gateway_architecture.md)
-- [02. PostgreSQL mcp スキーマ & 永続化仕様書 (docs/02_mcp_database_schema.md)](docs/02_mcp_database_schema.md)
+- [02. マルチクラウド・ゼロ運用ストレージ & 二段キャッシュ仕様書 (docs/02_mcp_database_schema.md)](docs/02_mcp_database_schema.md)
 - [03. テスト・デモ用リファレンスツール実装仕様書 (docs/03_builtin_tools_implementation.md)](docs/03_builtin_tools_implementation.md)
 - [04. 外部カスタム MCP サーバー管理 & 動的ディスパッチ仕様書 (docs/04_custom_server_dispatch.md)](docs/04_custom_server_dispatch.md)
 - [コントリビューションガイド (CONTRIBUTING.md)](CONTRIBUTING.md)
 - [セキュリティポリシー (SECURITY.md)](SECURITY.md)
+- [変更履歴 (CHANGELOG.md)](CHANGELOG.md)
 
 ---
 
 ## ライセンス
 
 本プロジェクトは [Mozilla Public License 2.0 (MPL-2.0)](LICENSE) の下で公開されています。
-
