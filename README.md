@@ -6,7 +6,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791.svg)](https://www.postgresql.org/)
 [![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-E6522C.svg?logo=prometheus)](https://prometheus.io/)
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-6BA539.svg?logo=openapiinitiative)](https://spec.openapis.org/oas/v3.1.0)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](LICENSE)
 
 **Portico** は、Model Context Protocol (MCP) をベースとしたマルチテナント向け実行ゲートウェイ・統合ハブである。  
 AI Engine や MCP クライアント（Claude Desktop, Cursor, LangGraph 等）と外部ツール（SaaS、顧客・テナント独自の外部カスタム MCP サーバー等）を安全に仲介し、動的ルーティング・プロキシ実行・監査ログ記録を行う。
@@ -329,4 +329,5 @@ uv run pytest --cov=portico
 
 ## ライセンス
 
-本プロジェクトは [MIT License](LICENSE) の下で公開されています。
+本プロジェクトは [Mozilla Public License 2.0 (MPL-2.0)](LICENSE) の下で公開されています。
+
