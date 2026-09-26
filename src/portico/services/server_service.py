@@ -39,6 +39,12 @@ from portico.storage.factory import get_server_repository
 
 logger = logging.getLogger(__name__)
 
+# SSRF対策: 接続確認でアクセス可能なMCP URLのサーバー側許可リスト
+# 運用時は設定ファイル/環境変数経由で管理することを推奨。
+ALLOWED_MCP_SERVER_URLS = {
+    "https://mcp.example.com",
+}
+
 
 async def invalidate_tool_cache(tenant_id: str | None = None) -> None:
     """ツール・サーバー定義キャッシュを無効化する。tenant_id 未指定時は全パージ。"""
@@ -161,6 +167,11 @@ async def add_external_server(data: ServerCreateRequest, tenant_id: str) -> dict
 
     # 接続確認テスト (MCP JSON-RPC 2.0 tools/list によるプローブ)
     normalized_url = data.url.rstrip("/")
+    if normalized_url not in ALLOWED_MCP_SERVER_URLS:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="MCP server URL is not allowed.",
+        )
     try:
         validate_mcp_url(normalized_url, allow_local=ALLOW_LOCAL_MCP_SERVERS)
     except ValueError as exc:
