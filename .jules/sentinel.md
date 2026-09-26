@@ -26,6 +26,7 @@
 **Vulnerability:** The SSRF validation filter could be bypassed using unspecified IPs like `0.0.0.0` or `::` because standard checks (like `.is_private`) may return unexpected results or not fully cover all dangerous address types, potentially allowing requests to local interfaces on all network interfaces.
 **Learning:** Python's `ipaddress` module requires explicit checking for `is_unspecified` alongside `is_private`, `is_loopback`, etc., because IPv6 unspecified addresses (`::`) and `0.0.0.0` are not always covered by standard private IP filters.
 **Prevention:** Always include an explicit check for `ip.is_unspecified` when validating URLs against SSRF or restricting IP access.
+
 ## 2025-02-27 - SSRF Bypass via CGNAT and Non-Global IP Addresses
 **Vulnerability:** The SSRF validation logic relied on `ipaddress.is_private`, `is_loopback`, `is_multicast`, etc., to block access to internal networks. However, Carrier-Grade NAT (CGNAT) addresses like `100.64.0.0/10` and certain other special-purpose addresses return `False` for `is_private`. This allowed these addresses to bypass the SSRF checks, potentially exposing internal infrastructure or other tenants in shared environments to unauthorized requests.
 **Learning:** Checking for specific "private" or "local" IP properties is an incomplete defense against SSRF. Many IP ranges are not globally routable but are also not strictly classified as "private" by standard library functions.
